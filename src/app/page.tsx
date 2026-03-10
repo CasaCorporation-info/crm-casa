@@ -1,65 +1,66 @@
-import Image from "next/image";
-
-export default function Home() {
+export default function DashboardPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div style={{ padding: 40 }}>
+      <h1 style={{ marginBottom: 30 }}>Dashboard</h1>
+
+      <div style={gridStyle}>
+        <StatBox title="Contatti in gestione" value="2893" />
+        <StatBox title="Contatti lavorati" value="1293" />
+        <StatBox title="Mai contattati" value="1600" />
+        <StatBox title="Notizie trovate" value="45" />
+        <StatBox title="Valutazioni fissate" value="12" />
+        <StatBox title="Incarichi presi" value="9" />
+        <StatBox title="Vendite fatte" value="1" />
+      </div>
+
+      <div style={{ marginTop: 40 }}>
+        <div style={todayBox}>
+          <h2 style={{ margin: 0 }}>Oggi hai contattato</h2>
+          <p style={{ fontSize: 36, marginTop: 10 }}>0 persone</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </div>
     </div>
   );
 }
+
+function StatBox({ title, value }: { title: string; value: string }) {
+  return (
+    <div style={boxStyle}>
+      <p style={boxTitle}>{title}</p>
+      <p style={boxValue}>{value}</p>
+    </div>
+  );
+}
+
+const gridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 20,
+};
+
+const boxStyle = {
+  background: "#ffffff",
+  borderRadius: 12,
+  padding: 20,
+  border: "1px solid #e5e5e5",
+};
+
+const boxTitle = {
+  margin: 0,
+  fontSize: 14,
+  color: "#666",
+};
+
+const boxValue = {
+  marginTop: 10,
+  fontSize: 32,
+  fontWeight: "bold",
+};
+
+const todayBox = {
+  background: "#ffffff",
+  borderRadius: 12,
+  padding: 30,
+  border: "1px solid #e5e5e5",
+  maxWidth: 400,
+};

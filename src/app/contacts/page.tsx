@@ -3,146 +3,40 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import type {
+  Agent,
+  Contact,
+  MessageTemplate,
+  RecentActivityMap,
+  SortDirection,
+  SortField,
+  UserProfile,
+  VisibleColumnKey,
+  VisibleColumnsState,
+} from "@/components/contacts/types";
+import {
+  PAGE_SIZE,
+  WARNING_DAYS,
+  buildGmailComposeUrl,
+  buildRecentActivityWarningMessage,
+  buildWhatsAppUrl,
+  getContactHealthStatus,
+  subtractDays,
+} from "@/components/contacts/utils";
+import CreateContactForm from "@/components/contacts/CreateContactForm";
+import ContactsFilters from "@/components/contacts/ContactsFilters";
+import TemplateModal from "@/components/contacts/TemplateModal";
+import ContactsTable from "@/components/contacts/ContactsTable";
 
-type Contact = {
-  id: string;
-  organization_id: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  phone_primary: string | null;
-  email_primary: string | null;
-  city: string | null;
-  contact_type: string | null;
-  lead_status: string | null;
-  source: string | null;
-  assigned_agent_id: string | null;
-  created_at: string | null;
-  last_contact_at: string | null;
+const VISIBLE_COLUMNS_STORAGE_KEY = "contacts_visible_columns";
+
+const DEFAULT_VISIBLE_COLUMNS: VisibleColumnsState = {
+  email: true,
+  city: true,
+  type: true,
+  source: true,
+  created_at: true,
 };
-
-type UserProfile = {
-  id: string;
-  role: string | null;
-};
-
-type Agent = {
-  id: string;
-  full_name: string | null;
-};
-
-type MessageTemplate = {
-  id: string;
-  organization_id: string;
-  type: "whatsapp" | "email";
-  title: string;
-  subject: string | null;
-  message: string;
-  created_at: string;
-  updated_at: string;
-};
-
-type RecentChannelActivity = {
-  contact_id: string;
-  activity_type: "whatsapp" | "email";
-  created_at: string;
-  template_id: string | null;
-  template_title: string | null;
-};
-
-type RecentActivityMap = Record<
-  string,
-  {
-    whatsapp: RecentChannelActivity | null;
-    email: RecentChannelActivity | null;
-  }
->;
-
-const PAGE_SIZE = 50;
-const WARNING_DAYS = 30;
-
-function formatDateTime(value: string | null) {
-  if (!value) return "-";
-
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-
-  return d.toLocaleString("it-IT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function getFullName(contact: Contact) {
-  return `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() || "-";
-}
-
-function normalizePhoneForWhatsApp(phone: string | null) {
-  if (!phone) return null;
-  const trimmed = phone.trim();
-  if (!trimmed) return null;
-
-  if (trimmed.startsWith("+")) {
-    return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-  }
-
-  return trimmed.replace(/\D/g, "");
-}
-
-function buildWhatsAppUrl(phone: string, text: string) {
-  const normalized = normalizePhoneForWhatsApp(phone);
-  if (!normalized) return null;
-
-  const waPhone = normalized.replace(/^\+/, "");
-  if (!waPhone) return null;
-
-  return `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`;
-}
-
-function normalizeEmail(email: string | null) {
-  if (!email) return null;
-  const cleaned = email.trim();
-  if (!cleaned) return null;
-  return cleaned;
-}
-
-function buildGmailComposeUrl(email: string, subject: string, body: string) {
-  const normalizedEmail = normalizeEmail(email);
-  if (!normalizedEmail) return null;
-
-  const params = new URLSearchParams({
-    view: "cm",
-    fs: "1",
-    to: normalizedEmail,
-    su: subject || "",
-    body: body || "",
-  });
-
-  return `https://mail.google.com/mail/?${params.toString()}`;
-}
-
-function subtractDays(date: Date, days: number) {
-  const copy = new Date(date);
-  copy.setDate(copy.getDate() - days);
-  return copy;
-}
-
-function getDaysAgoLabel(value: string | null) {
-  if (!value) return null;
-
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-
-  if (days === 0) return "oggi";
-  if (days === 1) return "1 giorno fa";
-  return `${days} giorni fa`;
-}
 
 export default function Home() {
   const router = useRouter();
@@ -159,7 +53,15 @@ export default function Home() {
   const [filterType, setFilterType] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterSource, setFilterSource] = useState<string>("");
+  const [filterHealth, setFilterHealth] = useState<string>("");
   const [onlyWithPhone, setOnlyWithPhone] = useState(false);
+
+  const [sortField, setSortField] = useState<SortField>("created_at");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+  const [visibleColumns, setVisibleColumns] = useState<VisibleColumnsState>(
+    DEFAULT_VISIBLE_COLUMNS
+  );
 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -171,11 +73,14 @@ export default function Home() {
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
   const [contactType, setContactType] = useState("owner");
-  const [leadStatus, setLeadStatus] = useState("new");
+  const [leadStatus, setLeadStatus] = useState("nuovo");
   const [source, setSource] = useState("manual");
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [currentOrganizationId, setCurrentOrganizationId] = useState<string | null>(
+    null
+  );
   const [authReady, setAuthReady] = useState(false);
 
   const [adminLeadView, setAdminLeadView] = useState<"assigned" | "unassigned">(
@@ -216,14 +121,60 @@ export default function Home() {
   const selectedTemplate =
     availableTemplates.find((t) => t.id === selectedTemplateId) || null;
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.localStorage.getItem(VISIBLE_COLUMNS_STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as Partial<VisibleColumnsState>;
+      setVisibleColumns({
+        email:
+          typeof parsed.email === "boolean"
+            ? parsed.email
+            : DEFAULT_VISIBLE_COLUMNS.email,
+        city:
+          typeof parsed.city === "boolean"
+            ? parsed.city
+            : DEFAULT_VISIBLE_COLUMNS.city,
+        type:
+          typeof parsed.type === "boolean"
+            ? parsed.type
+            : DEFAULT_VISIBLE_COLUMNS.type,
+        source:
+          typeof parsed.source === "boolean"
+            ? parsed.source
+            : DEFAULT_VISIBLE_COLUMNS.source,
+        created_at:
+          typeof parsed.created_at === "boolean"
+            ? parsed.created_at
+            : DEFAULT_VISIBLE_COLUMNS.created_at,
+      });
+    } catch {
+      return;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      VISIBLE_COLUMNS_STORAGE_KEY,
+      JSON.stringify(visibleColumns)
+    );
+  }, [visibleColumns]);
+
   async function loadContacts(opts?: {
     page?: number;
     search?: string;
     filterType?: string;
     filterStatus?: string;
     filterSource?: string;
+    filterHealth?: string;
     onlyWithPhone?: boolean;
     adminLeadView?: "assigned" | "unassigned";
+    sortField?: SortField;
+    sortDirection?: SortDirection;
   }) {
     if (!authReady || !currentUserId) return;
 
@@ -232,23 +183,21 @@ export default function Home() {
     const nextType = opts?.filterType ?? filterType;
     const nextStatus = opts?.filterStatus ?? filterStatus;
     const nextSource = opts?.filterSource ?? filterSource;
+    const nextHealth = opts?.filterHealth ?? filterHealth;
     const nextOnlyWithPhone = opts?.onlyWithPhone ?? onlyWithPhone;
     const nextAdminLeadView = opts?.adminLeadView ?? adminLeadView;
+    const nextSortField = opts?.sortField ?? sortField;
+    const nextSortDirection = opts?.sortDirection ?? sortDirection;
 
     setLoading(true);
     setErrorMsg(null);
-
-    const from = (nextPage - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
 
     let q = supabase
       .from("contacts")
       .select(
         "id, organization_id, first_name, last_name, phone_primary, email_primary, city, contact_type, lead_status, source, assigned_agent_id, created_at, last_contact_at",
         { count: "exact" }
-      )
-      .order("created_at", { ascending: false })
-      .range(from, to);
+      );
 
     if (isAgentOnly) {
       q = q.eq("assigned_agent_id", currentUserId);
@@ -282,6 +231,19 @@ export default function Home() {
       );
     }
 
+    if (nextSortField === "name") {
+      q = q.order("first_name", { ascending: nextSortDirection === "asc" });
+      q = q.order("last_name", { ascending: nextSortDirection === "asc" });
+    } else {
+      q = q.order(nextSortField, {
+        ascending: nextSortDirection === "asc",
+        nullsFirst:
+          nextSortField === "last_contact_at"
+            ? nextSortDirection === "asc"
+            : false,
+      });
+    }
+
     const { data, error, count } = await q;
 
     if (error) {
@@ -289,13 +251,28 @@ export default function Home() {
       setContacts([]);
       setTotal(0);
       setRecentActivities({});
-    } else {
-      const nextContacts = (data || []) as Contact[];
-      setContacts(nextContacts);
-      setTotal(typeof count === "number" ? count : 0);
-      await loadRecentActivitiesForContacts(nextContacts);
+      setLoading(false);
+      return;
     }
 
+    let nextContacts = ((data || []) as Contact[]).filter((contact) => {
+      if (!nextHealth) return true;
+      return getContactHealthStatus(contact.last_contact_at) === nextHealth;
+    });
+
+    const computedTotal = nextHealth
+      ? nextContacts.length
+      : typeof count === "number"
+      ? count
+      : 0;
+
+    const from = (nextPage - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE;
+    nextContacts = nextContacts.slice(from, to);
+
+    setContacts(nextContacts);
+    setTotal(computedTotal);
+    await loadRecentActivitiesForContacts(nextContacts);
     setLoading(false);
   }
 
@@ -449,8 +426,11 @@ export default function Home() {
       filterType,
       filterStatus,
       filterSource,
+      filterHealth,
       onlyWithPhone,
       adminLeadView,
+      sortField,
+      sortDirection,
     });
 
     setAssignmentLoadingId(null);
@@ -478,6 +458,8 @@ export default function Home() {
     setErrorMsg(null);
 
     const nowIso = new Date().toISOString();
+    const shouldSetContacted =
+      !contact.lead_status || contact.lead_status.trim().toLowerCase() === "nuovo";
 
     const { error: insertError } = await supabase
       .from("contact_activities")
@@ -498,9 +480,17 @@ export default function Home() {
       return;
     }
 
+    const updatePayload: Record<string, any> = {
+      last_contact_at: nowIso,
+    };
+
+    if (shouldSetContacted) {
+      updatePayload.lead_status = "contattato";
+    }
+
     const { error: updateError } = await supabase
       .from("contacts")
-      .update({ last_contact_at: nowIso })
+      .update(updatePayload)
       .eq("id", contact.id);
 
     if (updateError) {
@@ -516,7 +506,13 @@ export default function Home() {
 
     setContacts((prev) =>
       prev.map((c) =>
-        c.id === contact.id ? { ...c, last_contact_at: nowIso } : c
+        c.id === contact.id
+          ? {
+              ...c,
+              last_contact_at: nowIso,
+              lead_status: shouldSetContacted ? "contattato" : c.lead_status,
+            }
+          : c
       )
     );
 
@@ -536,19 +532,6 @@ export default function Home() {
     setTemplateModalContact(null);
     setSelectedTemplateId("");
     setActionLoading(false);
-  }
-
-  function buildRecentActivityWarningMessage(
-    recent: RecentChannelActivity,
-    channel: "whatsapp" | "email"
-  ) {
-    const titlePart = recent.template_title
-      ? ` il template "${recent.template_title}"`
-      : " un template";
-    const whenPart = getDaysAgoLabel(recent.created_at) || "recentemente";
-    const channelLabel = channel === "whatsapp" ? "WhatsApp" : "Email";
-
-    return `Questo contatto ha già ricevuto${titlePart} tramite ${channelLabel} ${whenPart}.\n\nVuoi procedere comunque con un altro template?`;
   }
 
   function tryOpenTemplateModal(contact: Contact, type: "whatsapp" | "email") {
@@ -659,6 +642,9 @@ export default function Home() {
     }
 
     const nowIso = new Date().toISOString();
+    const shouldSetContacted =
+      !templateModalContact.lead_status ||
+      templateModalContact.lead_status.trim().toLowerCase() === "nuovo";
 
     const { error: insertError } = await supabase
       .from("contact_activities")
@@ -679,9 +665,17 @@ export default function Home() {
       return;
     }
 
+    const updatePayload: Record<string, any> = {
+      last_contact_at: nowIso,
+    };
+
+    if (shouldSetContacted) {
+      updatePayload.lead_status = "contattato";
+    }
+
     const { error: updateError } = await supabase
       .from("contacts")
-      .update({ last_contact_at: nowIso })
+      .update(updatePayload)
       .eq("id", templateModalContact.id);
 
     if (updateError) {
@@ -692,7 +686,13 @@ export default function Home() {
 
     setContacts((prev) =>
       prev.map((c) =>
-        c.id === templateModalContact.id ? { ...c, last_contact_at: nowIso } : c
+        c.id === templateModalContact.id
+          ? {
+              ...c,
+              last_contact_at: nowIso,
+              lead_status: shouldSetContacted ? "contattato" : c.lead_status,
+            }
+          : c
       )
     );
 
@@ -732,6 +732,13 @@ export default function Home() {
     closeTemplateModal();
   }
 
+  function handleToggleVisibleColumn(key: VisibleColumnKey) {
+    setVisibleColumns((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  }
+
   useEffect(() => {
     async function bootstrapAuth() {
       const {
@@ -748,7 +755,7 @@ export default function Home() {
 
       const { data: profile, error } = await supabase
         .from("profiles")
-        .select("id, role")
+        .select("id, role, organization_id")
         .eq("id", userId)
         .single();
 
@@ -765,6 +772,7 @@ export default function Home() {
         .toLowerCase();
 
       setCurrentUserRole(typedProfile.role);
+      setCurrentOrganizationId(typedProfile.organization_id || null);
       setAuthReady(true);
 
       if (
@@ -788,8 +796,11 @@ export default function Home() {
       filterType,
       filterStatus,
       filterSource,
+      filterHealth,
       onlyWithPhone,
       adminLeadView,
+      sortField,
+      sortDirection,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, authReady]);
@@ -805,8 +816,11 @@ export default function Home() {
         filterType,
         filterStatus,
         filterSource,
+        filterHealth,
         onlyWithPhone,
         adminLeadView,
+        sortField,
+        sortDirection,
       });
     }, 250);
 
@@ -824,11 +838,23 @@ export default function Home() {
       filterType,
       filterStatus,
       filterSource,
+      filterHealth,
       onlyWithPhone,
       adminLeadView,
+      sortField,
+      sortDirection,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterType, filterStatus, filterSource, onlyWithPhone, authReady]);
+  }, [
+    filterType,
+    filterStatus,
+    filterSource,
+    filterHealth,
+    onlyWithPhone,
+    sortField,
+    sortDirection,
+    authReady,
+  ]);
 
   useEffect(() => {
     if (!authReady || !isAdminLike) return;
@@ -840,8 +866,11 @@ export default function Home() {
       filterType,
       filterStatus,
       filterSource,
+      filterHealth,
       onlyWithPhone,
       adminLeadView,
+      sortField,
+      sortDirection,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminLeadView, authReady, currentUserRole]);
@@ -856,14 +885,26 @@ export default function Home() {
   async function createContact() {
     setErrorMsg(null);
 
+    if (!currentUserId) {
+      setErrorMsg("Utente non autenticato.");
+      return;
+    }
+
+    if (!currentOrganizationId) {
+      setErrorMsg("organization_id utente mancante.");
+      return;
+    }
+
     const payload = {
-      first_name: firstName || null,
-      last_name: lastName || null,
-      phone_primary: phone || null,
-      city: city || null,
+      organization_id: currentOrganizationId,
+      created_by: currentUserId,
+      first_name: firstName.trim() || null,
+      last_name: lastName.trim() || null,
+      phone_primary: phone.trim() || null,
+      city: city.trim() || null,
       contact_type: contactType || null,
-      lead_status: leadStatus || null,
-      source: source || null,
+      lead_status: leadStatus || "nuovo",
+      source: source.trim() || null,
       assigned_agent_id: isAgentOnly ? currentUserId : null,
     };
 
@@ -879,7 +920,7 @@ export default function Home() {
     setPhone("");
     setCity("");
     setContactType("owner");
-    setLeadStatus("new");
+    setLeadStatus("nuovo");
     setSource("manual");
     setShowForm(false);
 
@@ -890,8 +931,11 @@ export default function Home() {
       filterType,
       filterStatus,
       filterSource,
+      filterHealth,
       onlyWithPhone,
       adminLeadView,
+      sortField,
+      sortDirection,
     });
   }
 
@@ -902,8 +946,11 @@ export default function Home() {
       filterType,
       filterStatus,
       filterSource,
+      filterHealth,
       onlyWithPhone,
       adminLeadView,
+      sortField,
+      sortDirection,
     });
   }
 
@@ -912,7 +959,10 @@ export default function Home() {
     setFilterType("");
     setFilterStatus("");
     setFilterSource("");
+    setFilterHealth("");
     setOnlyWithPhone(false);
+    setSortField("created_at");
+    setSortDirection("desc");
     setPage(1);
     setExpandedNoteContactId(null);
 
@@ -922,12 +972,13 @@ export default function Home() {
       filterType: "",
       filterStatus: "",
       filterSource: "",
+      filterHealth: "",
       onlyWithPhone: false,
       adminLeadView,
+      sortField: "created_at",
+      sortDirection: "desc",
     });
   }
-
-  const tableColSpan = isAdminLike ? 11 : 10;
 
   return (
     <main style={{ padding: 32 }}>
@@ -937,195 +988,52 @@ export default function Home() {
           Database contatti Casa Corporation
         </div>
 
-        {isAdminLike && (
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              marginBottom: 18,
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              onClick={() => setAdminLeadView("unassigned")}
-              style={{
-                padding: "10px 16px",
-                borderRadius: 12,
-                border:
-                  adminLeadView === "unassigned"
-                    ? "1px solid #111"
-                    : "1px solid #ddd",
-                background: adminLeadView === "unassigned" ? "#111" : "#fff",
-                color: adminLeadView === "unassigned" ? "#fff" : "#111",
-                cursor: "pointer",
-                fontWeight: 700,
-              }}
-            >
-              Da assegnare
-            </button>
+        <ContactsFilters
+          isAdminLike={isAdminLike}
+          adminLeadView={adminLeadView}
+          search={search}
+          filterType={filterType}
+          filterStatus={filterStatus}
+          filterSource={filterSource}
+          onlyWithPhone={onlyWithPhone}
+          filterHealth={filterHealth}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          visibleColumns={visibleColumns}
+          onAdminLeadViewChange={setAdminLeadView}
+          onSearchChange={setSearch}
+          onToggleShowForm={() => setShowForm((v) => !v)}
+          onRefresh={handleRefresh}
+          onFilterTypeChange={setFilterType}
+          onFilterStatusChange={setFilterStatus}
+          onFilterSourceChange={setFilterSource}
+          onOnlyWithPhoneChange={setOnlyWithPhone}
+          onFilterHealthChange={setFilterHealth}
+          onSortFieldChange={setSortField}
+          onSortDirectionChange={setSortDirection}
+          onToggleVisibleColumn={handleToggleVisibleColumn}
+          onResetFilters={handleResetFilters}
+        />
 
-            <button
-              onClick={() => setAdminLeadView("assigned")}
-              style={{
-                padding: "10px 16px",
-                borderRadius: 12,
-                border:
-                  adminLeadView === "assigned"
-                    ? "1px solid #111"
-                    : "1px solid #ddd",
-                background: adminLeadView === "assigned" ? "#111" : "#fff",
-                color: adminLeadView === "assigned" ? "#fff" : "#111",
-                cursor: "pointer",
-                fontWeight: 700,
-              }}
-            >
-              Assegnati
-            </button>
-          </div>
-        )}
-
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            marginBottom: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cerca per nome, telefono, email, città, tipo, fonte..."
-            style={{
-              flex: 1,
-              minWidth: 280,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-            }}
-          />
-
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #111",
-              background: "#111",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            + Nuovo contatto
-          </button>
-
-          <button
-            onClick={handleRefresh}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Aggiorna
-          </button>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            marginBottom: 16,
-            flexWrap: "wrap",
-          }}
-        >
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-            }}
-          >
-            <option value="">Tutti i tipi</option>
-            <option value="owner">owner</option>
-            <option value="buyer">buyer</option>
-            <option value="investor">investor</option>
-            <option value="tenant">tenant</option>
-            <option value="ex_client">ex_client</option>
-            <option value="lead">lead</option>
-            <option value="partner">partner</option>
-          </select>
-
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-            }}
-          >
-            <option value="">Tutti gli stati</option>
-            <option value="new">new</option>
-            <option value="contacted">contacted</option>
-            <option value="meeting">meeting</option>
-            <option value="valuation">valuation</option>
-            <option value="negotiation">negotiation</option>
-            <option value="client">client</option>
-            <option value="lost">lost</option>
-          </select>
-
-          <input
-            value={filterSource}
-            onChange={(e) => setFilterSource(e.target.value)}
-            placeholder="Filtra fonte (es: idealista, whatsapp, xls...)"
-            style={{
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              minWidth: 260,
-              background: "#fff",
-            }}
-          />
-
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "6px 8px",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={onlyWithPhone}
-              onChange={(e) => setOnlyWithPhone(e.target.checked)}
-            />
-            Solo con telefono
-          </label>
-
-          <button
-            onClick={handleResetFilters}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Reset filtri
-          </button>
-        </div>
+        <CreateContactForm
+          show={showForm}
+          firstName={firstName}
+          lastName={lastName}
+          phone={phone}
+          city={city}
+          contactType={contactType}
+          leadStatus={leadStatus}
+          source={source}
+          onFirstNameChange={setFirstName}
+          onLastNameChange={setLastName}
+          onPhoneChange={setPhone}
+          onCityChange={setCity}
+          onContactTypeChange={setContactType}
+          onLeadStatusChange={setLeadStatus}
+          onSourceChange={setSource}
+          onSave={createContact}
+          onCancel={() => setShowForm(false)}
+        />
 
         {errorMsg && (
           <div
@@ -1141,756 +1049,66 @@ export default function Home() {
           </div>
         )}
 
-        {showForm && (
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 16,
-              marginBottom: 18,
-              background: "#fff",
-            }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 10 }}>
-              Nuovo contatto
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-              }}
-            >
-              <input
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                placeholder="Nome"
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              />
-              <input
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                placeholder="Cognome"
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              />
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Telefono"
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              />
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Città"
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              />
-
-              <select
-                value={contactType}
-                onChange={(e) => setContactType(e.target.value)}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              >
-                <option value="owner">owner (proprietario)</option>
-                <option value="buyer">buyer (acquirente)</option>
-                <option value="investor">investor</option>
-                <option value="tenant">tenant</option>
-                <option value="ex_client">ex_client</option>
-                <option value="lead">lead</option>
-                <option value="partner">partner</option>
-              </select>
-
-              <select
-                value={leadStatus}
-                onChange={(e) => setLeadStatus(e.target.value)}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              >
-                <option value="new">new</option>
-                <option value="contacted">contacted</option>
-                <option value="meeting">meeting</option>
-                <option value="valuation">valuation</option>
-                <option value="negotiation">negotiation</option>
-                <option value="client">client</option>
-                <option value="lost">lost</option>
-              </select>
-
-              <input
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                placeholder="Fonte (es: immobiliare, idealista, whatsapp...)"
-                style={{
-                  gridColumn: "1 / -1",
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-              <button
-                onClick={createContact}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "1px solid #111",
-                  background: "#111",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                Salva contatto
-              </button>
-
-              <button
-                onClick={() => setShowForm(false)}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                  background: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                Annulla
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 12,
-            overflowX: "auto",
-            background: "#fff",
+        <ContactsTable
+          contacts={contacts}
+          loading={loading}
+          total={total}
+          page={page}
+          totalPages={totalPages}
+          loadingTemplates={loadingTemplates}
+          isAdminLike={isAdminLike}
+          agents={agents}
+          recentActivities={recentActivities}
+          visibleColumns={visibleColumns}
+          expandedNoteContactId={expandedNoteContactId}
+          noteDrafts={noteDrafts}
+          savingNoteId={savingNoteId}
+          assignmentLoadingId={assignmentLoadingId}
+          onToggleExpandedNote={(contactId) =>
+            setExpandedNoteContactId((prev) =>
+              prev === contactId ? null : contactId
+            )
+          }
+          onViewActivities={(contactId) => router.push(`/contacts/${contactId}`)}
+          onOpenWhatsappTemplate={(contact) =>
+            tryOpenTemplateModal(contact, "whatsapp")
+          }
+          onOpenEmailTemplate={(contact) =>
+            tryOpenTemplateModal(contact, "email")
+          }
+          onAssignContact={assignContact}
+          getAgentName={getAgentName}
+          onNoteDraftChange={(contactId, value) =>
+            setNoteDrafts((prev) => ({
+              ...prev,
+              [contactId]: value,
+            }))
+          }
+          onSaveQuickNote={saveQuickNote}
+          onCancelQuickNote={(contactId) => {
+            setExpandedNoteContactId(null);
+            setNoteDrafts((prev) => ({
+              ...prev,
+              [contactId]: "",
+            }));
           }}
-        >
-          <div
-            style={{
-              padding: 12,
-              borderBottom: "1px solid #ddd",
-              background: "#fafafa",
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
-            <div>
-              {loading ? "Caricamento..." : `Totale contatti: ${total}`}
-              {loadingTemplates && (
-                <span style={{ marginLeft: 10, opacity: 0.6 }}>
-                  · Caricamento template...
-                </span>
-              )}
-            </div>
-            <div style={{ opacity: 0.7 }}>
-              Pagina <b>{page}</b> / <b>{totalPages}</b>
-            </div>
-          </div>
-
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1750 }}>
-            <thead>
-              <tr style={{ textAlign: "left", background: "#fff" }}>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Nome
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Telefono
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Email
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Città
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Tipo
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Stato
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Fonte
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Creato il
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Ultimo contatto
-                </th>
-                <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                  Attività
-                </th>
-
-                {isAdminLike && (
-                  <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-                    Agente
-                  </th>
-                )}
-              </tr>
-            </thead>
-
-            <tbody>
-              {contacts.map((c) => {
-                const recentWhatsapp = recentActivities[c.id]?.whatsapp || null;
-                const recentEmail = recentActivities[c.id]?.email || null;
-
-                return (
-                  <React.Fragment key={c.id}>
-                    <tr>
-                      <td
-                        style={{
-                          padding: 12,
-                          borderBottom: "1px solid #f2f2f2",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        <a
-                          href={`/contacts/${c.id}`}
-                          style={{
-                            fontWeight: 700,
-                            color: "#111",
-                            textDecoration: "none",
-                          }}
-                        >
-                          {getFullName(c)}
-                        </a>
-                      </td>
-
-                      <td style={{ padding: 12, borderBottom: "1px solid #f2f2f2" }}>
-                        {c.phone_primary ?? "-"}
-                      </td>
-
-                      <td style={{ padding: 12, borderBottom: "1px solid #f2f2f2" }}>
-                        {c.email_primary ?? "-"}
-                      </td>
-
-                      <td style={{ padding: 12, borderBottom: "1px solid #f2f2f2" }}>
-                        {c.city ?? "-"}
-                      </td>
-
-                      <td style={{ padding: 12, borderBottom: "1px solid #f2f2f2" }}>
-                        {c.contact_type ?? "-"}
-                      </td>
-
-                      <td style={{ padding: 12, borderBottom: "1px solid #f2f2f2" }}>
-                        {c.lead_status ?? "-"}
-                      </td>
-
-                      <td style={{ padding: 12, borderBottom: "1px solid #f2f2f2" }}>
-                        {c.source ?? "-"}
-                      </td>
-
-                      <td
-                        style={{
-                          padding: 12,
-                          borderBottom: "1px solid #f2f2f2",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {formatDateTime(c.created_at)}
-                      </td>
-
-                      <td
-                        style={{
-                          padding: 12,
-                          borderBottom: "1px solid #f2f2f2",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {formatDateTime(c.last_contact_at)}
-                      </td>
-
-                      <td style={{ padding: 12, borderBottom: "1px solid #f2f2f2" }}>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <button
-                            onClick={() =>
-                              setExpandedNoteContactId((prev) =>
-                                prev === c.id ? null : c.id
-                              )
-                            }
-                            style={{
-                              padding: "8px 12px",
-                              borderRadius: 10,
-                              border: "1px solid #111",
-                              background:
-                                expandedNoteContactId === c.id ? "#111" : "#fff",
-                              color:
-                                expandedNoteContactId === c.id ? "#fff" : "#111",
-                              cursor: "pointer",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {expandedNoteContactId === c.id
-                              ? "Chiudi esito"
-                              : "Aggiungi esito"}
-                          </button>
-
-                          <button
-                            onClick={() => router.push(`/contacts/${c.id}`)}
-                            style={{
-                              padding: "8px 12px",
-                              borderRadius: 10,
-                              border: "1px solid #ddd",
-                              background: "#fff",
-                              color: "#111",
-                              cursor: "pointer",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            Vedi attività
-                          </button>
-
-                          <button
-                            onClick={() => tryOpenTemplateModal(c, "whatsapp")}
-                            disabled={!c.phone_primary?.trim()}
-                            title={
-                              !c.phone_primary?.trim()
-                                ? "Telefono mancante"
-                                : "Invia WhatsApp"
-                            }
-                            style={{
-                              padding: "8px 12px",
-                              borderRadius: 10,
-                              border: "1px solid #ddd",
-                              background: "#fff",
-                              color: "#111",
-                              cursor: !c.phone_primary?.trim()
-                                ? "not-allowed"
-                                : "pointer",
-                              whiteSpace: "nowrap",
-                              opacity: !c.phone_primary?.trim() ? 0.5 : 1,
-                            }}
-                          >
-                            WhatsApp
-                          </button>
-
-                          <button
-                            onClick={() => tryOpenTemplateModal(c, "email")}
-                            disabled={!c.email_primary?.trim()}
-                            title={
-                              !c.email_primary?.trim()
-                                ? "Email mancante"
-                                : "Invia Email"
-                            }
-                            style={{
-                              padding: "8px 12px",
-                              borderRadius: 10,
-                              border: "1px solid #ddd",
-                              background: "#fff",
-                              color: "#111",
-                              cursor: !c.email_primary?.trim()
-                                ? "not-allowed"
-                                : "pointer",
-                              whiteSpace: "nowrap",
-                              opacity: !c.email_primary?.trim() ? 0.5 : 1,
-                            }}
-                          >
-                            Email
-                          </button>
-
-                          {(recentWhatsapp || recentEmail) && (
-                            <div
-                              style={{
-                                fontSize: 12,
-                                opacity: 0.7,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              {recentWhatsapp && (
-                                <span>
-                                  WA: {getDaysAgoLabel(recentWhatsapp.created_at)}
-                                </span>
-                              )}
-                              {recentEmail && (
-                                <span>
-                                  Mail: {getDaysAgoLabel(recentEmail.created_at)}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      {isAdminLike && (
-                        <td style={{ padding: 12, borderBottom: "1px solid #f2f2f2" }}>
-                          <select
-                            value={c.assigned_agent_id ?? ""}
-                            onChange={(e) => assignContact(c.id, e.target.value)}
-                            disabled={assignmentLoadingId === c.id}
-                            style={{
-                              minWidth: 180,
-                              padding: "8px 10px",
-                              borderRadius: 10,
-                              border: "1px solid #ddd",
-                              background: "#fff",
-                              cursor:
-                                assignmentLoadingId === c.id
-                                  ? "not-allowed"
-                                  : "pointer",
-                              opacity: assignmentLoadingId === c.id ? 0.6 : 1,
-                            }}
-                          >
-                            <option value="">
-                              {c.assigned_agent_id
-                                ? "Rimuovi assegnazione"
-                                : "Seleziona agente"}
-                            </option>
-
-                            {agents.map((agent) => (
-                              <option key={agent.id} value={agent.id}>
-                                {agent.full_name?.trim() || "Agente"}
-                              </option>
-                            ))}
-                          </select>
-
-                          {assignmentLoadingId === c.id && (
-                            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-                              Salvataggio...
-                            </div>
-                          )}
-
-                          {assignmentLoadingId !== c.id && c.assigned_agent_id && (
-                            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-                              Attuale: {getAgentName(c.assigned_agent_id)}
-                            </div>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-
-                    {expandedNoteContactId === c.id && (
-                      <tr>
-                        <td
-                          colSpan={tableColSpan}
-                          style={{
-                            padding: 16,
-                            background: "#fafafa",
-                            borderBottom: "1px solid #f2f2f2",
-                          }}
-                        >
-                          <div style={{ maxWidth: 900 }}>
-                            <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                              Aggiungi esito rapido
-                            </div>
-
-                            <textarea
-                              value={noteDrafts[c.id] || ""}
-                              onChange={(e) =>
-                                setNoteDrafts((prev) => ({
-                                  ...prev,
-                                  [c.id]: e.target.value,
-                                }))
-                              }
-                              placeholder="Scrivi qui l'esito del contatto..."
-                              rows={4}
-                              style={{
-                                width: "100%",
-                                padding: 12,
-                                borderRadius: 10,
-                                border: "1px solid #ddd",
-                                resize: "vertical",
-                                fontFamily: "inherit",
-                              }}
-                            />
-
-                            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                              <button
-                                onClick={() => saveQuickNote(c)}
-                                disabled={savingNoteId === c.id}
-                                style={{
-                                  padding: "10px 14px",
-                                  borderRadius: 10,
-                                  border: "1px solid #111",
-                                  background: "#111",
-                                  color: "#fff",
-                                  cursor:
-                                    savingNoteId === c.id
-                                      ? "not-allowed"
-                                      : "pointer",
-                                  opacity: savingNoteId === c.id ? 0.7 : 1,
-                                }}
-                              >
-                                {savingNoteId === c.id
-                                  ? "Salvataggio..."
-                                  : "Salva esito"}
-                              </button>
-
-                              <button
-                                onClick={() => {
-                                  setExpandedNoteContactId(null);
-                                  setNoteDrafts((prev) => ({
-                                    ...prev,
-                                    [c.id]: "",
-                                  }));
-                                }}
-                                style={{
-                                  padding: "10px 14px",
-                                  borderRadius: 10,
-                                  border: "1px solid #ddd",
-                                  background: "#fff",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Annulla
-                              </button>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-
-              {!loading && contacts.length === 0 && (
-                <tr>
-                  <td colSpan={tableColSpan} style={{ padding: 14, opacity: 0.7 }}>
-                    Nessun contatto trovato.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              padding: 12,
-              borderTop: "1px solid #ddd",
-              background: "#fff",
-            }}
-          >
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1 || loading}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#fff",
-                cursor: page === 1 || loading ? "not-allowed" : "pointer",
-                opacity: page === 1 || loading ? 0.5 : 1,
-              }}
-            >
-              ← Precedente
-            </button>
-
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || loading}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#fff",
-                cursor:
-                  page >= totalPages || loading ? "not-allowed" : "pointer",
-                opacity: page >= totalPages || loading ? 0.5 : 1,
-              }}
-            >
-              Successivo →
-            </button>
-
-            <div style={{ marginLeft: "auto", opacity: 0.7 }}>
-              Mostrati: {contacts.length} su {total}
-            </div>
-          </div>
-        </div>
+          onPrevPage={() => setPage((p) => Math.max(1, p - 1))}
+          onNextPage={() => setPage((p) => Math.min(totalPages, p + 1))}
+        />
       </div>
 
-      {templateModalOpen && templateModalContact && templateModalType && (
-        <div
-          onClick={closeTemplateModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 1000,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 760,
-              background: "#fff",
-              borderRadius: 16,
-              border: "1px solid #ddd",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: 16,
-                borderBottom: "1px solid #eee",
-                background: "#fafafa",
-              }}
-            >
-              <div style={{ fontWeight: 700, fontSize: 18 }}>
-                {templateModalType === "whatsapp"
-                  ? "Invia WhatsApp"
-                  : "Invia Email"}
-              </div>
-              <div style={{ opacity: 0.7, marginTop: 4 }}>
-                Contatto: <b>{getFullName(templateModalContact)}</b>
-              </div>
-              <div style={{ opacity: 0.7, marginTop: 4 }}>
-                {templateModalType === "whatsapp"
-                  ? `Telefono: ${templateModalContact.phone_primary || "-"}`
-                  : `Email: ${templateModalContact.email_primary || "-"}`}
-              </div>
-            </div>
-
-            <div style={{ padding: 16, display: "grid", gap: 14 }}>
-              <div>
-                <div style={{ fontSize: 14, marginBottom: 6 }}>Template</div>
-                <select
-                  value={selectedTemplateId}
-                  onChange={(e) => setSelectedTemplateId(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                  }}
-                >
-                  <option value="">Seleziona template</option>
-                  {availableTemplates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.title}
-                    </option>
-                  ))}
-                </select>
-
-                {availableTemplates.length === 0 && (
-                  <div style={{ marginTop: 8, fontSize: 13, opacity: 0.7 }}>
-                    Nessun template disponibile per questo tipo.
-                  </div>
-                )}
-              </div>
-
-              {selectedTemplate && (
-                <div
-                  style={{
-                    border: "1px solid #eee",
-                    borderRadius: 12,
-                    padding: 14,
-                    background: "#fafafa",
-                  }}
-                >
-                  <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                    Anteprima template
-                  </div>
-
-                  <div style={{ marginBottom: 8 }}>
-                    <b>Titolo:</b> {selectedTemplate.title}
-                  </div>
-
-                  {templateModalType === "email" && (
-                    <div style={{ marginBottom: 8 }}>
-                      <b>Oggetto:</b> {selectedTemplate.subject || "-"}
-                    </div>
-                  )}
-
-                  <div
-                    style={{
-                      whiteSpace: "pre-wrap",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {selectedTemplate.message}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button
-                  onClick={closeTemplateModal}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  Annulla
-                </button>
-
-                <button
-                  onClick={handleSendFromTemplate}
-                  disabled={
-                    actionLoading ||
-                    !selectedTemplateId ||
-                    availableTemplates.length === 0
-                  }
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    border: "1px solid #111",
-                    background: "#111",
-                    color: "#fff",
-                    cursor:
-                      actionLoading ||
-                      !selectedTemplateId ||
-                      availableTemplates.length === 0
-                        ? "not-allowed"
-                        : "pointer",
-                    opacity:
-                      actionLoading ||
-                      !selectedTemplateId ||
-                      availableTemplates.length === 0
-                        ? 0.7
-                        : 1,
-                  }}
-                >
-                  {actionLoading
-                    ? "Preparazione..."
-                    : templateModalType === "whatsapp"
-                    ? "Apri WhatsApp"
-                    : "Apri Gmail"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <TemplateModal
+        open={templateModalOpen}
+        contact={templateModalContact}
+        type={templateModalType}
+        selectedTemplateId={selectedTemplateId}
+        availableTemplates={availableTemplates}
+        selectedTemplate={selectedTemplate}
+        actionLoading={actionLoading}
+        onClose={closeTemplateModal}
+        onSelectedTemplateIdChange={setSelectedTemplateId}
+        onConfirm={handleSendFromTemplate}
+      />
     </main>
   );
 }

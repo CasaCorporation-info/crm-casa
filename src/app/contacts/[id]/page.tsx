@@ -121,20 +121,21 @@ export default function ContactDetailPage() {
 
   async function save() {
     if (!c) return;
+
     setSaving(true);
     setErrorMsg(null);
 
     const { error } = await supabase
       .from("contacts")
       .update({
-        first_name: c.first_name,
-        last_name: c.last_name,
-        phone_primary: c.phone_primary,
-        email_primary: c.email_primary,
-        city: c.city,
-        contact_type: c.contact_type,
-        lead_status: c.lead_status,
-        source: c.source,
+        first_name: c.first_name?.trim() || null,
+        last_name: c.last_name?.trim() || null,
+        phone_primary: c.phone_primary?.trim() || null,
+        email_primary: c.email_primary?.trim() || null,
+        city: c.city?.trim() || null,
+        contact_type: c.contact_type || null,
+        lead_status: c.lead_status || null,
+        source: c.source?.trim() || null,
       })
       .eq("id", c.id);
 
@@ -164,6 +165,8 @@ export default function ContactDetailPage() {
     setErrorMsg(null);
 
     const nowIso = new Date().toISOString();
+    const shouldSetContacted =
+      !c.lead_status || c.lead_status.trim().toLowerCase() === "nuovo";
 
     const { error: insertError } = await supabase
       .from("contact_activities")
@@ -181,9 +184,17 @@ export default function ContactDetailPage() {
       return;
     }
 
+    const updatePayload: Record<string, any> = {
+      last_contact_at: nowIso,
+    };
+
+    if (shouldSetContacted) {
+      updatePayload.lead_status = "contattato";
+    }
+
     const { error: updateError } = await supabase
       .from("contacts")
-      .update({ last_contact_at: nowIso })
+      .update(updatePayload)
       .eq("id", c.id);
 
     if (updateError) {
@@ -193,7 +204,15 @@ export default function ContactDetailPage() {
     }
 
     setNewActivityText("");
-    setC((prev) => (prev ? { ...prev, last_contact_at: nowIso } : prev));
+    setC((prev) =>
+      prev
+        ? {
+            ...prev,
+            last_contact_at: nowIso,
+            lead_status: shouldSetContacted ? "contattato" : prev.lead_status,
+          }
+        : prev
+    );
 
     await loadActivities();
 
@@ -329,24 +348,28 @@ export default function ContactDetailPage() {
               placeholder="Nome"
               style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
             />
+
             <input
               value={c.last_name ?? ""}
               onChange={(e) => setC({ ...c, last_name: e.target.value || null })}
               placeholder="Cognome"
               style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
             />
+
             <input
               value={c.phone_primary ?? ""}
               onChange={(e) => setC({ ...c, phone_primary: e.target.value || null })}
               placeholder="Telefono"
               style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
             />
+
             <input
               value={c.email_primary ?? ""}
               onChange={(e) => setC({ ...c, email_primary: e.target.value || null })}
               placeholder="Email"
               style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
             />
+
             <input
               value={c.city ?? ""}
               onChange={(e) => setC({ ...c, city: e.target.value || null })}
@@ -375,13 +398,16 @@ export default function ContactDetailPage() {
               style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
             >
               <option value="">Stato (vuoto)</option>
-              <option value="new">new</option>
-              <option value="contacted">contacted</option>
-              <option value="meeting">meeting</option>
-              <option value="valuation">valuation</option>
-              <option value="negotiation">negotiation</option>
-              <option value="client">client</option>
-              <option value="lost">lost</option>
+              <option value="nuovo">nuovo</option>
+              <option value="contattato">contattato</option>
+              <option value="non interessato">non interessato</option>
+              <option value="informazione">informazione</option>
+              <option value="notizia">notizia</option>
+              <option value="valutazione fissata">valutazione fissata</option>
+              <option value="valutazione effettuata">valutazione effettuata</option>
+              <option value="incarico preso">incarico preso</option>
+              <option value="venduto">venduto</option>
+              <option value="da eliminare">da eliminare</option>
             </select>
 
             <input

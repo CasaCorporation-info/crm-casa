@@ -97,6 +97,10 @@ export default function AppShell({
             Lead
           </Link>
 
+          <Link href="/pipeline" style={linkStyle}>
+            Pipeline
+          </Link>
+
           {canSeeTemplates && (
             <Link href="/admin/templates" style={linkStyle}>
               Templates

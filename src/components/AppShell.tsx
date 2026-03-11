@@ -56,6 +56,7 @@ export default function AppShell({
           <div style={{ fontSize: 13, opacity: 0.6, marginTop: 4 }}>
             CRM
           </div>
+
           {fullName && (
             <div style={{ fontSize: 12, opacity: 0.6, marginTop: 10 }}>
               {fullName} · {normalizedRole || "user"}

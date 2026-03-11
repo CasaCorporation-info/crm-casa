@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuthContext } from "@/components/AuthProvider";
 import type {
   Agent,
   Contact,
@@ -40,6 +41,7 @@ const DEFAULT_VISIBLE_COLUMNS: VisibleColumnsState = {
 
 export default function Home() {
   const router = useRouter();
+  const auth = useAuthContext();
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -76,12 +78,10 @@ export default function Home() {
   const [leadStatus, setLeadStatus] = useState("nuovo");
   const [source, setSource] = useState("manual");
 
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
-  const [currentOrganizationId, setCurrentOrganizationId] = useState<string | null>(
-    null
-  );
-  const [authReady, setAuthReady] = useState(false);
+  const currentUserId = auth.userId;
+  const currentUserRole = auth.role;
+  const currentOrganizationId = auth.organizationId;
+  const authReady = !auth.loading;
 
   const [adminLeadView, setAdminLeadView] = useState<"assigned" | "unassigned">(
     "unassigned"
@@ -740,40 +740,36 @@ export default function Home() {
   }
 
   useEffect(() => {
-    async function bootstrapAuth() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    if (!authReady) return;
 
-      if (!session?.user) {
-        router.push("/login");
-        return;
-      }
+    if (!auth.isAuthenticated) {
+      router.push("/login");
+      return;
+    }
 
-      const userId = session.user.id;
-      setCurrentUserId(userId);
+    if (!currentUserId) {
+      setLoading(false);
+      setErrorMsg("Utente non autenticato.");
+      return;
+    }
 
-      const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("id, role, organization_id")
-        .eq("id", userId)
-        .single();
+    if (!currentOrganizationId) {
+      setLoading(false);
+      setErrorMsg("organization_id utente mancante.");
+      return;
+    }
 
-      if (error || !profile) {
-        setErrorMsg("Profilo utente non trovato.");
-        setAuthReady(true);
-        setLoading(false);
-        return;
-      }
+    setErrorMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, auth.isAuthenticated, currentUserId, currentOrganizationId]);
 
-      const typedProfile = profile as UserProfile;
-      const normalizedBootstrapRole = String(typedProfile.role || "")
+  useEffect(() => {
+    async function run() {
+      if (!authReady || !currentUserRole) return;
+
+      const normalizedBootstrapRole = String(currentUserRole || "")
         .trim()
         .toLowerCase();
-
-      setCurrentUserRole(typedProfile.role);
-      setCurrentOrganizationId(typedProfile.organization_id || null);
-      setAuthReady(true);
 
       if (
         normalizedBootstrapRole === "admin" ||
@@ -783,12 +779,12 @@ export default function Home() {
       }
     }
 
-    bootstrapAuth();
+    run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authReady, currentUserRole]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !currentUserId || !currentOrganizationId) return;
 
     loadContacts({
       page,
@@ -803,10 +799,10 @@ export default function Home() {
       sortDirection,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, authReady]);
+  }, [page, authReady, currentUserId, currentOrganizationId]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !currentUserId || !currentOrganizationId) return;
 
     const t = setTimeout(() => {
       setPage(1);
@@ -826,10 +822,10 @@ export default function Home() {
 
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, authReady]);
+  }, [search, authReady, currentUserId, currentOrganizationId]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !currentUserId || !currentOrganizationId) return;
 
     setPage(1);
     loadContacts({
@@ -854,10 +850,13 @@ export default function Home() {
     sortField,
     sortDirection,
     authReady,
+    currentUserId,
+    currentOrganizationId,
   ]);
 
   useEffect(() => {
-    if (!authReady || !isAdminLike) return;
+    if (!authReady || !isAdminLike || !currentUserId || !currentOrganizationId)
+      return;
 
     setPage(1);
     loadContacts({
@@ -873,7 +872,7 @@ export default function Home() {
       sortDirection,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminLeadView, authReady, currentUserRole]);
+  }, [adminLeadView, authReady, currentUserRole, currentUserId, currentOrganizationId]);
 
   useEffect(() => {
     const orgId = contacts.find((c) => c.organization_id)?.organization_id || null;

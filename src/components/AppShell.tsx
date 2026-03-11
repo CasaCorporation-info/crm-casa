@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuthContext } from "@/components/AuthProvider";
 
 const linkStyle: React.CSSProperties = {
   display: "block",
@@ -19,30 +19,7 @@ export default function AppShell({
 }: {
   children: React.ReactNode;
 }) {
-  const [role, setRole] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function loadProfile() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.user) {
-        setRole(null);
-        return;
-      }
-
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", session.user.id)
-        .single();
-
-      setRole(data?.role ?? null);
-    }
-
-    loadProfile();
-  }, []);
+  const { role, fullName } = useAuthContext();
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -79,6 +56,11 @@ export default function AppShell({
           <div style={{ fontSize: 13, opacity: 0.6, marginTop: 4 }}>
             CRM
           </div>
+          {fullName && (
+            <div style={{ fontSize: 12, opacity: 0.6, marginTop: 10 }}>
+              {fullName} · {normalizedRole || "user"}
+            </div>
+          )}
         </div>
 
         <nav

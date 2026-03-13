@@ -11,7 +11,6 @@ import type {
   RecentActivityMap,
   SortDirection,
   SortField,
-  UserProfile,
   VisibleColumnKey,
   VisibleColumnsState,
 } from "@/components/contacts/types";
@@ -19,9 +18,11 @@ import {
   PAGE_SIZE,
   WARNING_DAYS,
   buildGmailComposeUrl,
+  buildHealthFilterRange,
   buildRecentActivityWarningMessage,
   buildWhatsAppUrl,
-  getContactHealthStatus,
+  createContactActivityAndTouchContact,
+  mapQuickActivityTypeToDbValue,
   subtractDays,
 } from "@/components/contacts/utils";
 import CreateContactForm from "@/components/contacts/CreateContactForm";
@@ -38,6 +39,8 @@ const DEFAULT_VISIBLE_COLUMNS: VisibleColumnsState = {
   source: true,
   created_at: true,
 };
+
+const DEFAULT_QUICK_ACTIVITY_TYPE = "Note";
 
 export default function Home() {
   const router = useRouter();
@@ -91,6 +94,7 @@ export default function Home() {
     string | null
   >(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [noteTypeDrafts, setNoteTypeDrafts] = useState<Record<string, string>>({});
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
 
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -120,6 +124,33 @@ export default function Home() {
 
   const selectedTemplate =
     availableTemplates.find((t) => t.id === selectedTemplateId) || null;
+
+  const queryState = useMemo(
+    () => ({
+      page,
+      search,
+      filterType,
+      filterStatus,
+      filterSource,
+      filterHealth,
+      onlyWithPhone,
+      adminLeadView,
+      sortField,
+      sortDirection,
+    }),
+    [
+      page,
+      search,
+      filterType,
+      filterStatus,
+      filterSource,
+      filterHealth,
+      onlyWithPhone,
+      adminLeadView,
+      sortField,
+      sortDirection,
+    ]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -164,118 +195,6 @@ export default function Home() {
     );
   }, [visibleColumns]);
 
-  async function loadContacts(opts?: {
-    page?: number;
-    search?: string;
-    filterType?: string;
-    filterStatus?: string;
-    filterSource?: string;
-    filterHealth?: string;
-    onlyWithPhone?: boolean;
-    adminLeadView?: "assigned" | "unassigned";
-    sortField?: SortField;
-    sortDirection?: SortDirection;
-  }) {
-    if (!authReady || !currentUserId) return;
-
-    const nextPage = opts?.page ?? page;
-    const nextSearch = opts?.search ?? search;
-    const nextType = opts?.filterType ?? filterType;
-    const nextStatus = opts?.filterStatus ?? filterStatus;
-    const nextSource = opts?.filterSource ?? filterSource;
-    const nextHealth = opts?.filterHealth ?? filterHealth;
-    const nextOnlyWithPhone = opts?.onlyWithPhone ?? onlyWithPhone;
-    const nextAdminLeadView = opts?.adminLeadView ?? adminLeadView;
-    const nextSortField = opts?.sortField ?? sortField;
-    const nextSortDirection = opts?.sortDirection ?? sortDirection;
-
-    setLoading(true);
-    setErrorMsg(null);
-
-    let q = supabase
-      .from("contacts")
-      .select(
-        "id, organization_id, first_name, last_name, phone_primary, email_primary, city, contact_type, lead_status, source, assigned_agent_id, created_at, last_contact_at",
-        { count: "exact" }
-      );
-
-    if (isAgentOnly) {
-      q = q.eq("assigned_agent_id", currentUserId);
-    }
-
-    if (isAdminLike) {
-      if (nextAdminLeadView === "assigned") {
-        q = q.not("assigned_agent_id", "is", null);
-      } else {
-        q = q.is("assigned_agent_id", null);
-      }
-    }
-
-    if (nextType) q = q.eq("contact_type", nextType);
-    if (nextStatus) q = q.eq("lead_status", nextStatus);
-    if (nextSource.trim()) q = q.ilike("source", `%${nextSource.trim()}%`);
-    if (nextOnlyWithPhone) q = q.not("phone_primary", "is", null);
-
-    const s = nextSearch.trim();
-    if (s) {
-      q = q.or(
-        [
-          `first_name.ilike.%${s}%`,
-          `last_name.ilike.%${s}%`,
-          `phone_primary.ilike.%${s}%`,
-          `email_primary.ilike.%${s}%`,
-          `city.ilike.%${s}%`,
-          `contact_type.ilike.%${s}%`,
-          `source.ilike.%${s}%`,
-        ].join(",")
-      );
-    }
-
-    if (nextSortField === "name") {
-      q = q.order("first_name", { ascending: nextSortDirection === "asc" });
-      q = q.order("last_name", { ascending: nextSortDirection === "asc" });
-    } else {
-      q = q.order(nextSortField, {
-        ascending: nextSortDirection === "asc",
-        nullsFirst:
-          nextSortField === "last_contact_at"
-            ? nextSortDirection === "asc"
-            : false,
-      });
-    }
-
-    const { data, error, count } = await q;
-
-    if (error) {
-      setErrorMsg(error.message);
-      setContacts([]);
-      setTotal(0);
-      setRecentActivities({});
-      setLoading(false);
-      return;
-    }
-
-    let nextContacts = ((data || []) as Contact[]).filter((contact) => {
-      if (!nextHealth) return true;
-      return getContactHealthStatus(contact.last_contact_at) === nextHealth;
-    });
-
-    const computedTotal = nextHealth
-      ? nextContacts.length
-      : typeof count === "number"
-      ? count
-      : 0;
-
-    const from = (nextPage - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE;
-    nextContacts = nextContacts.slice(from, to);
-
-    setContacts(nextContacts);
-    setTotal(computedTotal);
-    await loadRecentActivitiesForContacts(nextContacts);
-    setLoading(false);
-  }
-
   async function loadRecentActivitiesForContacts(nextContacts: Contact[]) {
     if (!nextContacts.length) {
       setRecentActivities({});
@@ -308,12 +227,18 @@ export default function Home() {
     }
 
     for (const raw of data || []) {
-      const row = raw as any;
+      const row = raw as {
+        contact_id: string | null;
+        activity_type: string | null;
+        created_at: string | null;
+        template_id: string | null;
+        metadata: Record<string, unknown> | null;
+      };
       const contactId = String(row.contact_id || "");
       const activityType = String(row.activity_type || "") as "whatsapp" | "email";
-      const createdAt = (row.created_at as string) || null;
-      const templateId = (row.template_id as string | null) || null;
-      const metadata = (row.metadata as Record<string, any> | null) || {};
+      const createdAt = row.created_at || "";
+      const templateId = row.template_id || null;
+      const metadata = row.metadata || {};
       const templateTitle =
         typeof metadata.template_title === "string"
           ? metadata.template_title
@@ -330,7 +255,7 @@ export default function Home() {
         map[contactId].whatsapp = {
           contact_id: contactId,
           activity_type: "whatsapp",
-          created_at: createdAt || "",
+          created_at: createdAt,
           template_id: templateId,
           template_title: templateTitle,
         };
@@ -340,7 +265,7 @@ export default function Home() {
         map[contactId].email = {
           contact_id: contactId,
           activity_type: "email",
-          created_at: createdAt || "",
+          created_at: createdAt,
           template_id: templateId,
           template_title: templateTitle,
         };
@@ -350,11 +275,137 @@ export default function Home() {
     setRecentActivities(map);
   }
 
-  async function loadTemplates(orgId?: string | null) {
-    const organizationId =
-      orgId || contacts.find((c) => c.organization_id)?.organization_id || null;
+  async function loadContacts(opts?: Partial<typeof queryState>) {
+    if (!authReady || !currentUserId || !currentOrganizationId) return;
 
-    if (!organizationId) return;
+    const nextPage = opts?.page ?? queryState.page;
+    const nextSearch = opts?.search ?? queryState.search;
+    const nextType = opts?.filterType ?? queryState.filterType;
+    const nextStatus = opts?.filterStatus ?? queryState.filterStatus;
+    const nextSource = opts?.filterSource ?? queryState.filterSource;
+    const nextHealth = opts?.filterHealth ?? queryState.filterHealth;
+    const nextOnlyWithPhone = opts?.onlyWithPhone ?? queryState.onlyWithPhone;
+    const nextAdminLeadView = opts?.adminLeadView ?? queryState.adminLeadView;
+    const nextSortField = opts?.sortField ?? queryState.sortField;
+    const nextSortDirection = opts?.sortDirection ?? queryState.sortDirection;
+
+    setLoading(true);
+    setErrorMsg(null);
+
+    let countQuery = supabase
+      .from("contacts")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", currentOrganizationId);
+
+    let dataQuery = supabase
+      .from("contacts")
+      .select(
+        "id, organization_id, first_name, last_name, phone_primary, email_primary, city, contact_type, lead_status, source, assigned_agent_id, created_at, last_contact_at"
+      )
+      .eq("organization_id", currentOrganizationId);
+
+    function applySharedFilters(query: any) {
+  let q = query;
+
+  if (isAgentOnly) {
+    q = q.eq("assigned_agent_id", currentUserId);
+  }
+
+  if (isAdminLike) {
+    if (nextAdminLeadView === "assigned") {
+      q = q.not("assigned_agent_id", "is", null);
+    } else {
+      q = q.is("assigned_agent_id", null);
+    }
+  }
+
+  if (nextType) q = q.eq("contact_type", nextType);
+  if (nextStatus) q = q.eq("lead_status", nextStatus);
+  if (nextSource.trim()) q = q.ilike("source", `%${nextSource.trim()}%`);
+  if (nextOnlyWithPhone) q = q.not("phone_primary", "is", null);
+
+  const s = nextSearch.trim();
+  if (s) {
+    q = q.or(
+      [
+        `first_name.ilike.%${s}%`,
+        `last_name.ilike.%${s}%`,
+        `phone_primary.ilike.%${s}%`,
+        `email_primary.ilike.%${s}%`,
+        `city.ilike.%${s}%`,
+        `contact_type.ilike.%${s}%`,
+        `source.ilike.%${s}%`,
+      ].join(",")
+    );
+  }
+
+  const healthRange = buildHealthFilterRange(nextHealth);
+
+  if (healthRange?.mode === "never") {
+    q = q.is("last_contact_at", null);
+  } else if (healthRange?.before) {
+    q = q.lt("last_contact_at", healthRange.before);
+  } else if (healthRange?.after) {
+    q = q.gte("last_contact_at", healthRange.after);
+  } else if (healthRange?.from && healthRange?.to) {
+    q = q.gte("last_contact_at", healthRange.from).lte(
+      "last_contact_at",
+      healthRange.to
+    );
+  }
+
+  return q;
+}
+
+countQuery = applySharedFilters(countQuery);
+dataQuery = applySharedFilters(dataQuery);
+
+    if (nextSortField === "name") {
+      dataQuery = dataQuery.order("first_name", {
+        ascending: nextSortDirection === "asc",
+      });
+      dataQuery = dataQuery.order("last_name", {
+        ascending: nextSortDirection === "asc",
+      });
+    } else {
+      dataQuery = dataQuery.order(nextSortField, {
+        ascending: nextSortDirection === "asc",
+        nullsFirst:
+          nextSortField === "last_contact_at"
+            ? nextSortDirection === "asc"
+            : false,
+      });
+    }
+
+    const from = (nextPage - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    dataQuery = dataQuery.range(from, to);
+
+    const [{ count, error: countError }, { data, error }] = await Promise.all([
+      countQuery,
+      dataQuery,
+    ]);
+
+    if (countError || error) {
+      setErrorMsg(countError?.message || error?.message || "Errore nel caricamento.");
+      setContacts([]);
+      setTotal(0);
+      setRecentActivities({});
+      setLoading(false);
+      return;
+    }
+
+    const nextContacts = (data || []) as Contact[];
+    const computedTotal = typeof count === "number" ? count : 0;
+
+    setContacts(nextContacts);
+    setTotal(computedTotal);
+    await loadRecentActivitiesForContacts(nextContacts);
+    setLoading(false);
+  }
+
+  async function loadTemplates() {
+    if (!currentOrganizationId) return;
 
     setLoadingTemplates(true);
 
@@ -363,7 +414,7 @@ export default function Home() {
       .select(
         "id, organization_id, type, title, subject, message, created_at, updated_at"
       )
-      .eq("organization_id", organizationId)
+      .eq("organization_id", currentOrganizationId)
       .order("created_at", { ascending: false });
 
     if (!error) {
@@ -393,7 +444,7 @@ export default function Home() {
       const rows = Array.isArray(json) ? json : json?.agents || json?.data || [];
 
       setAgents(
-        rows.map((a: any) => ({
+        rows.map((a: { id: string; full_name?: string | null; email?: string | null }) => ({
           id: a.id,
           full_name: a.full_name || a.email || "Agente",
         }))
@@ -407,6 +458,8 @@ export default function Home() {
     setErrorMsg(null);
     setAssignmentLoadingId(contactId);
 
+    const currentContact = contacts.find((contact) => contact.id === contactId) || null;
+    const previousAgentId = currentContact?.assigned_agent_id || null;
     const valueToSave = agentId || null;
 
     const { error } = await supabase
@@ -420,24 +473,40 @@ export default function Home() {
       return;
     }
 
-    await loadContacts({
-      page,
-      search,
-      filterType,
-      filterStatus,
-      filterSource,
-      filterHealth,
-      onlyWithPhone,
-      adminLeadView,
-      sortField,
-      sortDirection,
-    });
+    if (currentContact?.organization_id && currentUserId) {
+      const nextAgent = agents.find((agent) => agent.id === valueToSave) || null;
+      const previousAgent = agents.find((agent) => agent.id === previousAgentId) || null;
 
+      await supabase.from("contact_activities").insert({
+        organization_id: currentContact.organization_id,
+        contact_id: contactId,
+        created_by: currentUserId,
+        activity_type: "assignment",
+        channel: null,
+        template_id: null,
+        note: `Lead assegnato: ${previousAgent?.full_name || "non assegnato"} → ${nextAgent?.full_name || "non assegnato"}`,
+        metadata: {
+          source: "contacts_table_assignment",
+          previous_assigned_agent_id: previousAgentId,
+          previous_assigned_agent_name: previousAgent?.full_name || null,
+          assigned_agent_id: valueToSave,
+          assigned_agent_name: nextAgent?.full_name || null,
+        },
+      });
+    }
+
+    await loadContacts();
     setAssignmentLoadingId(null);
+  }
+
+  function getQuickActivityType(contactId: string) {
+    return noteTypeDrafts[contactId] || DEFAULT_QUICK_ACTIVITY_TYPE;
   }
 
   async function saveQuickNote(contact: Contact) {
     const note = (noteDrafts[contact.id] || "").trim();
+    const selectedType = getQuickActivityType(contact.id);
+    const dbActivityType = mapQuickActivityTypeToDbValue(selectedType);
 
     if (!note) {
       setErrorMsg("Scrivi un esito prima di salvare.");
@@ -457,67 +526,52 @@ export default function Home() {
     setSavingNoteId(contact.id);
     setErrorMsg(null);
 
-    const nowIso = new Date().toISOString();
-    const shouldSetContacted =
-      !contact.lead_status || contact.lead_status.trim().toLowerCase() === "nuovo";
-
-    const { error: insertError } = await supabase
-      .from("contact_activities")
-      .insert({
-        organization_id: contact.organization_id,
-        contact_id: contact.id,
-        created_by: currentUserId,
-        activity_type: "note",
+    try {
+      const result = await createContactActivityAndTouchContact({
+        organizationId: contact.organization_id,
+        contactId: contact.id,
+        createdBy: currentUserId,
+        activityType: dbActivityType,
         note,
-        channel: null,
-        template_id: null,
-        metadata: {},
+        currentLeadStatus: contact.lead_status,
+        channel:
+          dbActivityType === "whatsapp" || dbActivityType === "email"
+            ? dbActivityType
+            : null,
+        metadata: {
+          source: "quick_note",
+          label: selectedType,
+        },
       });
 
-    if (insertError) {
-      setErrorMsg(insertError.message);
+      setNoteDrafts((prev) => ({
+        ...prev,
+        [contact.id]: "",
+      }));
+
+      setNoteTypeDrafts((prev) => ({
+        ...prev,
+        [contact.id]: DEFAULT_QUICK_ACTIVITY_TYPE,
+      }));
+
+      setContacts((prev) =>
+        prev.map((c) =>
+          c.id === contact.id
+            ? {
+                ...c,
+                last_contact_at: result.last_contact_at,
+                lead_status: result.lead_status,
+              }
+            : c
+        )
+      );
+
+      setExpandedNoteContactId(null);
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Errore nel salvataggio.");
+    } finally {
       setSavingNoteId(null);
-      return;
     }
-
-    const updatePayload: Record<string, any> = {
-      last_contact_at: nowIso,
-    };
-
-    if (shouldSetContacted) {
-      updatePayload.lead_status = "contattato";
-    }
-
-    const { error: updateError } = await supabase
-      .from("contacts")
-      .update(updatePayload)
-      .eq("id", contact.id);
-
-    if (updateError) {
-      setErrorMsg(updateError.message);
-      setSavingNoteId(null);
-      return;
-    }
-
-    setNoteDrafts((prev) => ({
-      ...prev,
-      [contact.id]: "",
-    }));
-
-    setContacts((prev) =>
-      prev.map((c) =>
-        c.id === contact.id
-          ? {
-              ...c,
-              last_contact_at: nowIso,
-              lead_status: shouldSetContacted ? "contattato" : c.lead_status,
-            }
-          : c
-      )
-    );
-
-    setExpandedNoteContactId(null);
-    setSavingNoteId(null);
   }
 
   function getAgentName(agentId: string | null) {
@@ -591,7 +645,7 @@ export default function Home() {
 
     let targetUrl: string | null = null;
     let note = "";
-    let metadata: Record<string, any> = {
+    let metadata: Record<string, unknown> = {
       template_title: selectedTemplate.title,
       status: "opened",
     };
@@ -641,95 +695,69 @@ export default function Home() {
       };
     }
 
-    const nowIso = new Date().toISOString();
-    const shouldSetContacted =
-      !templateModalContact.lead_status ||
-      templateModalContact.lead_status.trim().toLowerCase() === "nuovo";
-
-    const { error: insertError } = await supabase
-      .from("contact_activities")
-      .insert({
-        organization_id: templateModalContact.organization_id,
-        contact_id: templateModalContact.id,
-        created_by: currentUserId,
-        activity_type: templateModalType,
-        channel: templateModalType,
-        template_id: selectedTemplate.id,
+    try {
+      const result = await createContactActivityAndTouchContact({
+        organizationId: templateModalContact.organization_id,
+        contactId: templateModalContact.id,
+        createdBy: currentUserId,
+        activityType: templateModalType,
         note,
+        currentLeadStatus: templateModalContact.lead_status,
+        channel: templateModalType,
+        templateId: selectedTemplate.id,
         metadata,
       });
 
-    if (insertError) {
-      setErrorMsg(insertError.message);
-      setActionLoading(false);
-      return;
-    }
-
-    const updatePayload: Record<string, any> = {
-      last_contact_at: nowIso,
-    };
-
-    if (shouldSetContacted) {
-      updatePayload.lead_status = "contattato";
-    }
-
-    const { error: updateError } = await supabase
-      .from("contacts")
-      .update(updatePayload)
-      .eq("id", templateModalContact.id);
-
-    if (updateError) {
-      setErrorMsg(updateError.message);
-      setActionLoading(false);
-      return;
-    }
-
-    setContacts((prev) =>
-      prev.map((c) =>
-        c.id === templateModalContact.id
-          ? {
-              ...c,
-              last_contact_at: nowIso,
-              lead_status: shouldSetContacted ? "contattato" : c.lead_status,
-            }
-          : c
-      )
-    );
-
-    setRecentActivities((prev) => ({
-      ...prev,
-      [templateModalContact.id]: {
-        whatsapp:
-          templateModalType === "whatsapp"
+      setContacts((prev) =>
+        prev.map((c) =>
+          c.id === templateModalContact.id
             ? {
-                contact_id: templateModalContact.id,
-                activity_type: "whatsapp",
-                created_at: nowIso,
-                template_id: selectedTemplate.id,
-                template_title: selectedTemplate.title,
+                ...c,
+                last_contact_at: result.last_contact_at,
+                lead_status: result.lead_status,
               }
-            : prev[templateModalContact.id]?.whatsapp || null,
-        email:
-          templateModalType === "email"
-            ? {
-                contact_id: templateModalContact.id,
-                activity_type: "email",
-                created_at: nowIso,
-                template_id: selectedTemplate.id,
-                template_title: selectedTemplate.title,
-              }
-            : prev[templateModalContact.id]?.email || null,
-      },
-    }));
+            : c
+        )
+      );
 
-    if (!targetUrl) {
-      setErrorMsg("Impossibile aprire il link del messaggio.");
+      setRecentActivities((prev) => ({
+        ...prev,
+        [templateModalContact.id]: {
+          whatsapp:
+            templateModalType === "whatsapp"
+              ? {
+                  contact_id: templateModalContact.id,
+                  activity_type: "whatsapp",
+                  created_at: result.last_contact_at,
+                  template_id: selectedTemplate.id,
+                  template_title: selectedTemplate.title,
+                }
+              : prev[templateModalContact.id]?.whatsapp || null,
+          email:
+            templateModalType === "email"
+              ? {
+                  contact_id: templateModalContact.id,
+                  activity_type: "email",
+                  created_at: result.last_contact_at,
+                  template_id: selectedTemplate.id,
+                  template_title: selectedTemplate.title,
+                }
+              : prev[templateModalContact.id]?.email || null,
+        },
+      }));
+
+      if (!targetUrl) {
+        setErrorMsg("Impossibile aprire il link del messaggio.");
+        setActionLoading(false);
+        return;
+      }
+
+      window.open(targetUrl, "_blank", "noopener,noreferrer");
+      closeTemplateModal();
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Errore nell'apertura del template.");
       setActionLoading(false);
-      return;
     }
-
-    window.open(targetUrl, "_blank", "noopener,noreferrer");
-    closeTemplateModal();
   }
 
   function handleToggleVisibleColumn(key: VisibleColumnKey) {
@@ -760,11 +788,16 @@ export default function Home() {
     }
 
     setErrorMsg(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, auth.isAuthenticated, currentUserId, currentOrganizationId]);
+  }, [
+    authReady,
+    auth.isAuthenticated,
+    currentUserId,
+    currentOrganizationId,
+    router,
+  ]);
 
   useEffect(() => {
-    async function run() {
+    async function bootstrap() {
       if (!authReady || !currentUserRole) return;
 
       const normalizedBootstrapRole = String(currentUserRole || "")
@@ -777,109 +810,22 @@ export default function Home() {
       ) {
         await loadAgents();
       }
+
+      await loadTemplates();
     }
 
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, currentUserRole]);
+    bootstrap();
+  }, [authReady, currentUserRole, currentOrganizationId]);
 
   useEffect(() => {
     if (!authReady || !currentUserId || !currentOrganizationId) return;
 
-    loadContacts({
-      page,
-      search,
-      filterType,
-      filterStatus,
-      filterSource,
-      filterHealth,
-      onlyWithPhone,
-      adminLeadView,
-      sortField,
-      sortDirection,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, authReady, currentUserId, currentOrganizationId]);
-
-  useEffect(() => {
-    if (!authReady || !currentUserId || !currentOrganizationId) return;
-
-    const t = setTimeout(() => {
-      setPage(1);
-      loadContacts({
-        page: 1,
-        search,
-        filterType,
-        filterStatus,
-        filterSource,
-        filterHealth,
-        onlyWithPhone,
-        adminLeadView,
-        sortField,
-        sortDirection,
-      });
+    const timeout = setTimeout(() => {
+      loadContacts(queryState);
     }, 250);
 
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, authReady, currentUserId, currentOrganizationId]);
-
-  useEffect(() => {
-    if (!authReady || !currentUserId || !currentOrganizationId) return;
-
-    setPage(1);
-    loadContacts({
-      page: 1,
-      search,
-      filterType,
-      filterStatus,
-      filterSource,
-      filterHealth,
-      onlyWithPhone,
-      adminLeadView,
-      sortField,
-      sortDirection,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    filterType,
-    filterStatus,
-    filterSource,
-    filterHealth,
-    onlyWithPhone,
-    sortField,
-    sortDirection,
-    authReady,
-    currentUserId,
-    currentOrganizationId,
-  ]);
-
-  useEffect(() => {
-    if (!authReady || !isAdminLike || !currentUserId || !currentOrganizationId)
-      return;
-
-    setPage(1);
-    loadContacts({
-      page: 1,
-      search,
-      filterType,
-      filterStatus,
-      filterSource,
-      filterHealth,
-      onlyWithPhone,
-      adminLeadView,
-      sortField,
-      sortDirection,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminLeadView, authReady, currentUserRole, currentUserId, currentOrganizationId]);
-
-  useEffect(() => {
-    const orgId = contacts.find((c) => c.organization_id)?.organization_id || null;
-    if (!authReady || !orgId) return;
-    loadTemplates(orgId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, contacts.length]);
+    return () => clearTimeout(timeout);
+  }, [authReady, currentUserId, currentOrganizationId, queryState]);
 
   async function createContact() {
     setErrorMsg(null);
@@ -924,33 +870,11 @@ export default function Home() {
     setShowForm(false);
 
     setPage(1);
-    await loadContacts({
-      page: 1,
-      search,
-      filterType,
-      filterStatus,
-      filterSource,
-      filterHealth,
-      onlyWithPhone,
-      adminLeadView,
-      sortField,
-      sortDirection,
-    });
+    await loadContacts({ ...queryState, page: 1 });
   }
 
   function handleRefresh() {
-    loadContacts({
-      page,
-      search,
-      filterType,
-      filterStatus,
-      filterSource,
-      filterHealth,
-      onlyWithPhone,
-      adminLeadView,
-      sortField,
-      sortDirection,
-    });
+    loadContacts(queryState);
   }
 
   function handleResetFilters() {
@@ -964,19 +888,6 @@ export default function Home() {
     setSortDirection("desc");
     setPage(1);
     setExpandedNoteContactId(null);
-
-    loadContacts({
-      page: 1,
-      search: "",
-      filterType: "",
-      filterStatus: "",
-      filterSource: "",
-      filterHealth: "",
-      onlyWithPhone: false,
-      adminLeadView,
-      sortField: "created_at",
-      sortDirection: "desc",
-    });
   }
 
   return (
@@ -999,17 +910,44 @@ export default function Home() {
           sortField={sortField}
           sortDirection={sortDirection}
           visibleColumns={visibleColumns}
-          onAdminLeadViewChange={setAdminLeadView}
-          onSearchChange={setSearch}
+          onAdminLeadViewChange={(value) => {
+            setPage(1);
+            setAdminLeadView(value);
+          }}
+          onSearchChange={(value) => {
+            setPage(1);
+            setSearch(value);
+          }}
           onToggleShowForm={() => setShowForm((v) => !v)}
           onRefresh={handleRefresh}
-          onFilterTypeChange={setFilterType}
-          onFilterStatusChange={setFilterStatus}
-          onFilterSourceChange={setFilterSource}
-          onOnlyWithPhoneChange={setOnlyWithPhone}
-          onFilterHealthChange={setFilterHealth}
-          onSortFieldChange={setSortField}
-          onSortDirectionChange={setSortDirection}
+          onFilterTypeChange={(value) => {
+            setPage(1);
+            setFilterType(value);
+          }}
+          onFilterStatusChange={(value) => {
+            setPage(1);
+            setFilterStatus(value);
+          }}
+          onFilterSourceChange={(value) => {
+            setPage(1);
+            setFilterSource(value);
+          }}
+          onOnlyWithPhoneChange={(value) => {
+            setPage(1);
+            setOnlyWithPhone(value);
+          }}
+          onFilterHealthChange={(value) => {
+            setPage(1);
+            setFilterHealth(value);
+          }}
+          onSortFieldChange={(value) => {
+            setPage(1);
+            setSortField(value);
+          }}
+          onSortDirectionChange={(value) => {
+            setPage(1);
+            setSortDirection(value);
+          }}
           onToggleVisibleColumn={handleToggleVisibleColumn}
           onResetFilters={handleResetFilters}
         />
@@ -1061,6 +999,7 @@ export default function Home() {
           visibleColumns={visibleColumns}
           expandedNoteContactId={expandedNoteContactId}
           noteDrafts={noteDrafts}
+          noteTypeDrafts={noteTypeDrafts}
           savingNoteId={savingNoteId}
           assignmentLoadingId={assignmentLoadingId}
           onToggleExpandedNote={(contactId) =>
@@ -1083,12 +1022,22 @@ export default function Home() {
               [contactId]: value,
             }))
           }
+          onNoteTypeDraftChange={(contactId, value) =>
+            setNoteTypeDrafts((prev) => ({
+              ...prev,
+              [contactId]: value,
+            }))
+          }
           onSaveQuickNote={saveQuickNote}
           onCancelQuickNote={(contactId) => {
             setExpandedNoteContactId(null);
             setNoteDrafts((prev) => ({
               ...prev,
               [contactId]: "",
+            }));
+            setNoteTypeDrafts((prev) => ({
+              ...prev,
+              [contactId]: DEFAULT_QUICK_ACTIVITY_TYPE,
             }));
           }}
           onPrevPage={() => setPage((p) => Math.max(1, p - 1))}

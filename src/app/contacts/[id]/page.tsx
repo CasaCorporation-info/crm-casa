@@ -1,74 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuthContext } from "@/components/AuthProvider";
+import Activities from "@/components/contacts/Activities";
+import type {
+  Contact,
+  ContactFormValues,
+  LeadStatus,
+} from "@/components/contacts/types";
+import {
+  buildContactUpdatePayload,
+  buildGmailComposeUrl,
+  buildWhatsAppUrl,
+  createContactActivityAndTouchContact,
+  diffContactEditableFields,
+  formatDateTime,
+  getFullName,
+  normalizeEmail,
+  normalizeTextInput,
+} from "@/components/contacts/utils";
 
-type Contact = {
-  id: string;
-  organization_id: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  phone_primary: string | null;
+type EditableContact = Contact & {
   email_primary: string | null;
-  city: string | null;
-  contact_type: string | null;
-  lead_status: string | null;
-  source: string | null;
-  last_contact_at: string | null;
 };
 
-type ContactActivity = {
-  id: string;
-  contact_id: string;
-  activity_type: string | null;
-  note: string;
-  created_at: string | null;
-  created_by: string | null;
-};
-
-function formatDateTime(value: string | null) {
-  if (!value) return "-";
-
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-
-  return d.toLocaleString("it-IT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function extractEditableValues(contact: EditableContact): ContactFormValues {
+  return {
+    first_name: contact.first_name,
+    last_name: contact.last_name,
+    phone_primary: contact.phone_primary,
+    email_primary: contact.email_primary,
+    city: contact.city,
+    contact_type: contact.contact_type,
+    lead_status: contact.lead_status,
+    source: contact.source,
+  };
 }
 
 export default function ContactDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const auth = useAuthContext();
   const id = params.id;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [savingActivity, setSavingActivity] = useState(false);
-  const [loadingActivities, setLoadingActivities] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [c, setC] = useState<EditableContact | null>(null);
+  const [originalContact, setOriginalContact] = useState<EditableContact | null>(null);
 
-  const [c, setC] = useState<Contact | null>(null);
-  const [activities, setActivities] = useState<ContactActivity[]>([]);
-  const [newActivityText, setNewActivityText] = useState("");
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function bootstrap() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      setCurrentUserId(session?.user?.id ?? null);
-    }
-
-    bootstrap();
-  }, []);
+  const contactName = useMemo(() => (c ? getFullName(c) : "Scheda contatto"), [c]);
 
   async function loadContact() {
     setLoading(true);
@@ -77,7 +61,7 @@ export default function ContactDetailPage() {
     const { data, error } = await supabase
       .from("contacts")
       .select(
-        "id, organization_id, first_name, last_name, phone_primary, email_primary, city, contact_type, lead_status, source, last_contact_at"
+        "id, organization_id, first_name, last_name, phone_primary, email_primary, city, contact_type, lead_status, source, assigned_agent_id, created_at, last_contact_at"
       )
       .eq("id", id)
       .single();
@@ -85,138 +69,227 @@ export default function ContactDetailPage() {
     if (error) {
       setErrorMsg(error.message);
       setC(null);
+      setOriginalContact(null);
     } else {
-      setC(data as Contact);
+      const contact = data as EditableContact;
+      setC(contact);
+      setOriginalContact(contact);
     }
 
     setLoading(false);
   }
 
-  async function loadActivities() {
-    setLoadingActivities(true);
-
-    const { data, error } = await supabase
-      .from("contact_activities")
-      .select("id, contact_id, activity_type, note, created_at, created_by")
-      .eq("contact_id", id)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      setErrorMsg(error.message);
-      setActivities([]);
-    } else {
-      setActivities((data || []) as ContactActivity[]);
-    }
-
-    setLoadingActivities(false);
-  }
-
   useEffect(() => {
     if (!id) return;
-
     loadContact();
-    loadActivities();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function save() {
-    if (!c) return;
+    if (!c || !originalContact) return;
+    if (!auth.userId) {
+      setErrorMsg("Utente non autenticato.");
+      return;
+    }
 
     setSaving(true);
     setErrorMsg(null);
 
-    const { error } = await supabase
-      .from("contacts")
-      .update({
-        first_name: c.first_name?.trim() || null,
-        last_name: c.last_name?.trim() || null,
-        phone_primary: c.phone_primary?.trim() || null,
-        email_primary: c.email_primary?.trim() || null,
-        city: c.city?.trim() || null,
-        contact_type: c.contact_type || null,
-        lead_status: c.lead_status || null,
-        source: c.source?.trim() || null,
-      })
-      .eq("id", c.id);
+    const nextValues = extractEditableValues(c);
+    const previousValues = extractEditableValues(originalContact);
+    const changes = diffContactEditableFields(previousValues, nextValues);
+    const updatePayload = buildContactUpdatePayload(nextValues);
+
+    const { error } = await supabase.from("contacts").update(updatePayload).eq("id", c.id);
 
     if (error) {
       setErrorMsg(error.message);
+      setSaving(false);
+      return;
     }
 
+    if (c.organization_id && changes.length > 0) {
+      try {
+        for (const change of changes) {
+          await supabase.from("contact_activities").insert({
+            organization_id: c.organization_id,
+            contact_id: c.id,
+            created_by: auth.userId,
+            activity_type: change.field === "lead_status" ? "status_change" : "profile_update",
+            channel: null,
+            template_id: null,
+            note:
+              change.field === "lead_status"
+                ? `Cambio stato lead: ${change.previousValue || "vuoto"} → ${change.nextValue || "vuoto"}`
+                : `MODIFICA ANAGRAFICA · ${change.label}: ${change.previousValue || "vuoto"} → ${change.nextValue || "vuoto"}`,
+            metadata:
+              change.field === "lead_status"
+                ? {
+                    source: "contact_edit",
+                    from_status: change.previousValue,
+                    to_status: change.nextValue,
+                    field_name: change.field,
+                    field_label: change.label,
+                  }
+                : {
+                    source: "contact_edit",
+                    field_name: change.field,
+                    field_label: change.label,
+                    previous_value: change.previousValue,
+                    new_value: change.nextValue,
+                  },
+          });
+        }
+      } catch {
+        setErrorMsg(
+          "Contatto salvato, ma non sono riuscito a registrare tutto lo storico modifiche."
+        );
+      }
+    }
+
+    const updatedContact: EditableContact = {
+      ...c,
+      ...updatePayload,
+    };
+
+    setC(updatedContact);
+    setOriginalContact(updatedContact);
     setSaving(false);
   }
 
-  async function addActivity() {
-    if (!c) return;
+  async function handleCallClick() {
+    if (!c?.phone_primary || !c.organization_id || !auth.userId) return;
 
-    const note = newActivityText.trim();
-
-    if (!note) {
-      setErrorMsg("Scrivi un esito prima di salvare.");
-      return;
-    }
-
-    if (!c.organization_id) {
-      setErrorMsg("organization_id mancante sul contatto.");
-      return;
-    }
-
-    setSavingActivity(true);
+    setActionLoading(true);
     setErrorMsg(null);
 
-    const nowIso = new Date().toISOString();
-    const shouldSetContacted =
-      !c.lead_status || c.lead_status.trim().toLowerCase() === "nuovo";
-
-    const { error: insertError } = await supabase
-      .from("contact_activities")
-      .insert({
-        organization_id: c.organization_id,
-        contact_id: c.id,
-        created_by: currentUserId,
-        activity_type: "note",
-        note,
+    try {
+      const result = await createContactActivityAndTouchContact({
+        organizationId: c.organization_id,
+        contactId: c.id,
+        createdBy: auth.userId,
+        activityType: "call",
+        note: "Avviata chiamata dal CRM.",
+        currentLeadStatus: c.lead_status,
+        metadata: {
+          source: "contact_detail_actions",
+          label: "Chiamata",
+        },
       });
 
-    if (insertError) {
-      setErrorMsg(insertError.message);
-      setSavingActivity(false);
+      setC((prev) =>
+        prev
+          ? {
+              ...prev,
+              last_contact_at: result.last_contact_at,
+              lead_status: result.lead_status as LeadStatus | string | null,
+            }
+          : prev
+      );
+
+      window.location.href = `tel:${c.phone_primary}`;
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Errore durante la chiamata.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleWhatsAppClick() {
+    if (!c?.phone_primary || !c.organization_id || !auth.userId) return;
+
+    const targetUrl = buildWhatsAppUrl(c.phone_primary, "");
+    if (!targetUrl) {
+      setErrorMsg("Numero WhatsApp non valido.");
       return;
     }
 
-    const updatePayload: Record<string, any> = {
-      last_contact_at: nowIso,
-    };
+    setActionLoading(true);
+    setErrorMsg(null);
 
-    if (shouldSetContacted) {
-      updatePayload.lead_status = "contattato";
+    try {
+      const result = await createContactActivityAndTouchContact({
+        organizationId: c.organization_id,
+        contactId: c.id,
+        createdBy: auth.userId,
+        activityType: "whatsapp",
+        note: "Aperta conversazione WhatsApp dal CRM.",
+        currentLeadStatus: c.lead_status,
+        channel: "whatsapp",
+        metadata: {
+          source: "contact_detail_actions",
+          label: "WhatsApp",
+          phone: c.phone_primary,
+        },
+      });
+
+      setC((prev) =>
+        prev
+          ? {
+              ...prev,
+              last_contact_at: result.last_contact_at,
+              lead_status: result.lead_status as LeadStatus | string | null,
+            }
+          : prev
+      );
+
+      window.open(targetUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Errore durante l'apertura di WhatsApp.");
+    } finally {
+      setActionLoading(false);
     }
+  }
 
-    const { error: updateError } = await supabase
-      .from("contacts")
-      .update(updatePayload)
-      .eq("id", c.id);
+  async function handleEmailClick() {
+    if (!c?.email_primary || !c.organization_id || !auth.userId) return;
 
-    if (updateError) {
-      setErrorMsg(updateError.message);
-      setSavingActivity(false);
+    const email = normalizeEmail(c.email_primary);
+    if (!email) {
+      setErrorMsg("Email non valida.");
       return;
     }
 
-    setNewActivityText("");
-    setC((prev) =>
-      prev
-        ? {
-            ...prev,
-            last_contact_at: nowIso,
-            lead_status: shouldSetContacted ? "contattato" : prev.lead_status,
-          }
-        : prev
-    );
+    const targetUrl = buildGmailComposeUrl(email, "", "");
+    if (!targetUrl) {
+      setErrorMsg("Impossibile costruire il link Gmail.");
+      return;
+    }
 
-    await loadActivities();
+    setActionLoading(true);
+    setErrorMsg(null);
 
-    setSavingActivity(false);
+    try {
+      const result = await createContactActivityAndTouchContact({
+        organizationId: c.organization_id,
+        contactId: c.id,
+        createdBy: auth.userId,
+        activityType: "email",
+        note: "Aperta email Gmail web dal CRM.",
+        currentLeadStatus: c.lead_status,
+        channel: "email",
+        metadata: {
+          source: "contact_detail_actions",
+          label: "Email",
+          email,
+        },
+      });
+
+      setC((prev) =>
+        prev
+          ? {
+              ...prev,
+              last_contact_at: result.last_contact_at,
+              lead_status: result.lead_status as LeadStatus | string | null,
+            }
+          : prev
+      );
+
+      window.open(targetUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Errore durante l'apertura di Gmail.");
+    } finally {
+      setActionLoading(false);
+    }
   }
 
   if (loading) return <div style={{ padding: 40 }}>Caricamento...</div>;
@@ -265,22 +338,57 @@ export default function ContactDetailPage() {
           ← Indietro
         </button>
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <a
-            href={c.phone_primary ? `tel:${c.phone_primary}` : "#"}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={handleCallClick}
+            disabled={!c.phone_primary || actionLoading}
             style={{
               padding: "10px 14px",
               borderRadius: 10,
               border: "1px solid #ddd",
               background: "#fff",
-              textDecoration: "none",
               color: "#111",
               opacity: c.phone_primary ? 1 : 0.5,
-              pointerEvents: c.phone_primary ? "auto" : "none",
+              cursor: !c.phone_primary || actionLoading ? "not-allowed" : "pointer",
             }}
           >
             📞 Chiama
-          </a>
+          </button>
+
+          <button
+            onClick={handleWhatsAppClick}
+            disabled={!c.phone_primary || actionLoading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: "#fff",
+              color: "#111",
+              opacity: c.phone_primary ? 1 : 0.5,
+              cursor: !c.phone_primary || actionLoading ? "not-allowed" : "pointer",
+            }}
+          >
+            💬 WhatsApp
+          </button>
+
+          <button
+            onClick={handleEmailClick}
+            disabled={!normalizeTextInput(c.email_primary) || actionLoading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: "#fff",
+              color: "#111",
+              opacity: normalizeTextInput(c.email_primary) ? 1 : 0.5,
+              cursor:
+                !normalizeTextInput(c.email_primary) || actionLoading
+                  ? "not-allowed"
+                  : "pointer",
+            }}
+          >
+            ✉️ Email
+          </button>
 
           <button
             onClick={save}
@@ -300,9 +408,7 @@ export default function ContactDetailPage() {
         </div>
       </div>
 
-      <h2 style={{ marginBottom: 6 }}>
-        {`${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || "Scheda contatto"}
-      </h2>
+      <h2 style={{ marginBottom: 6 }}>{contactName || "Scheda contatto"}</h2>
 
       <div style={{ opacity: 0.7, marginBottom: 6 }}>ID: {c.id}</div>
       <div style={{ opacity: 0.7, marginBottom: 18 }}>
@@ -434,97 +540,22 @@ export default function ContactDetailPage() {
         >
           <div style={{ fontWeight: 700, marginBottom: 12 }}>Attività / esiti</div>
 
-          <textarea
-            value={newActivityText}
-            onChange={(e) => setNewActivityText(e.target.value)}
-            placeholder="Scrivi qui l'esito del contatto, nota, aggiornamento chiamata, follow-up..."
-            rows={5}
-            style={{
-              width: "100%",
-              padding: 12,
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              resize: "vertical",
-              fontFamily: "inherit",
-              marginBottom: 10,
-            }}
+          <Activities
+            contactId={c.id}
+            organizationId={c.organization_id}
+            leadStatus={c.lead_status}
+            onActivityCreated={({ last_contact_at, lead_status }) =>
+              setC((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      last_contact_at,
+                      lead_status,
+                    }
+                  : prev
+              )
+            }
           />
-
-          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-            <button
-              onClick={addActivity}
-              disabled={savingActivity}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #111",
-                background: "#111",
-                color: "#fff",
-                cursor: savingActivity ? "not-allowed" : "pointer",
-                opacity: savingActivity ? 0.7 : 1,
-              }}
-            >
-              {savingActivity ? "Salvataggio..." : "Salva esito"}
-            </button>
-
-            <button
-              onClick={loadActivities}
-              disabled={loadingActivities}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#fff",
-                cursor: loadingActivities ? "not-allowed" : "pointer",
-                opacity: loadingActivities ? 0.7 : 1,
-              }}
-            >
-              Aggiorna attività
-            </button>
-          </div>
-
-          <div style={{ fontWeight: 700, marginBottom: 10 }}>Storico attività</div>
-
-          {loadingActivities ? (
-            <div style={{ opacity: 0.7 }}>Caricamento attività...</div>
-          ) : activities.length === 0 ? (
-            <div style={{ opacity: 0.7 }}>Nessuna attività registrata.</div>
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                maxHeight: 500,
-                overflowY: "auto",
-              }}
-            >
-              {activities.map((activity) => (
-                <div
-                  key={activity.id}
-                  style={{
-                    border: "1px solid #e8e8e8",
-                    borderRadius: 10,
-                    background: "#fafafa",
-                    padding: 12,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      opacity: 0.7,
-                      marginBottom: 6,
-                    }}
-                  >
-                    {activity.activity_type || "note"} •{" "}
-                    {formatDateTime(activity.created_at)}
-                  </div>
-
-                  <div style={{ whiteSpace: "pre-wrap" }}>{activity.note}</div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -29,6 +29,7 @@ type Props = {
   visibleColumns: VisibleColumnsState;
   expandedNoteContactId: string | null;
   noteDrafts: Record<string, string>;
+  noteTypeDrafts: Record<string, string>;
   savingNoteId: string | null;
   assignmentLoadingId: string | null;
   onToggleExpandedNote: (contactId: string) => void;
@@ -38,6 +39,7 @@ type Props = {
   onAssignContact: (contactId: string, agentId: string) => void;
   getAgentName: (agentId: string | null) => string;
   onNoteDraftChange: (contactId: string, value: string) => void;
+  onNoteTypeDraftChange: (contactId: string, value: string) => void;
   onSaveQuickNote: (contact: Contact) => void;
   onCancelQuickNote: (contactId: string) => void;
   onPrevPage: () => void;
@@ -57,6 +59,7 @@ export default function ContactsTable({
   visibleColumns,
   expandedNoteContactId,
   noteDrafts,
+  noteTypeDrafts,
   savingNoteId,
   assignmentLoadingId,
   onToggleExpandedNote,
@@ -66,6 +69,7 @@ export default function ContactsTable({
   onAssignContact,
   getAgentName,
   onNoteDraftChange,
+  onNoteTypeDraftChange,
   onSaveQuickNote,
   onCancelQuickNote,
   onPrevPage,
@@ -430,6 +434,28 @@ export default function ContactsTable({
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>
                           Aggiungi esito rapido
                         </div>
+
+                        <select
+                          value={noteTypeDrafts[c.id] || "Note"}
+                          onChange={(e) =>
+                            onNoteTypeDraftChange(c.id, e.target.value)
+                          }
+                          style={{
+                            width: "100%",
+                            maxWidth: 260,
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: "1px solid #ddd",
+                            background: "#fff",
+                            marginBottom: 10,
+                          }}
+                        >
+                          <option value="Chiamata">Chiamata</option>
+                          <option value="WhatsApp">WhatsApp</option>
+                          <option value="Email">Email</option>
+                          <option value="Incontro">Incontro</option>
+                          <option value="Note">Note</option>
+                        </select>
 
                         <textarea
                           value={noteDrafts[c.id] || ""}

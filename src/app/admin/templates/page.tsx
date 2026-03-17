@@ -3,22 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import type { MessageTemplate } from "@/components/contacts/types";
 
 type UserProfile = {
   id: string;
   role: string | null;
   organization_id: string | null;
-};
-
-type MessageTemplate = {
-  id: string;
-  organization_id: string;
-  type: "whatsapp" | "email";
-  title: string;
-  subject: string | null;
-  message: string;
-  created_at: string;
-  updated_at: string;
 };
 
 function formatDateTime(value: string | null) {
@@ -57,6 +47,7 @@ export default function TemplatesPage() {
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [variables, setVariables] = useState<string>("");
 
   const normalizedRole = String(currentUserRole || "")
     .trim()
@@ -123,7 +114,7 @@ export default function TemplatesPage() {
     const { data, error } = await supabase
       .from("message_templates")
       .select(
-        "id, organization_id, type, title, subject, message, created_at, updated_at"
+        "id, organization_id, channel, type, title, subject, message, buttons, variables, is_active, preview_data, created_at, updated_at"
       )
       .eq("organization_id", orgId)
       .order("created_at", { ascending: false });
@@ -135,7 +126,29 @@ export default function TemplatesPage() {
       return;
     }
 
-    setTemplates((data || []) as MessageTemplate[]);
+    const normalizedTemplates: MessageTemplate[] = (data || []).map((t) => ({
+      id: t.id,
+      organization_id: t.organization_id,
+      channel:
+        t.channel === "email" || t.channel === "whatsapp" ? t.channel : t.type,
+      type: t.type === "email" ? "email" : "whatsapp",
+      title: t.title || "",
+      subject: t.subject || null,
+      message: t.message || "",
+      buttons: [],
+      variables: Array.isArray(t.variables)
+        ? t.variables.map((v) => String(v))
+        : [],
+      is_active: typeof t.is_active === "boolean" ? t.is_active : true,
+      preview_data:
+        t.preview_data && typeof t.preview_data === "object"
+          ? (t.preview_data as Record<string, unknown>)
+          : null,
+      created_at: t.created_at,
+      updated_at: t.updated_at,
+    }));
+
+    setTemplates(normalizedTemplates);
     setLoading(false);
   }
 
@@ -145,6 +158,7 @@ export default function TemplatesPage() {
     setTitle("");
     setSubject("");
     setMessage("");
+    setVariables("");
   }
 
   function startEdit(template: MessageTemplate) {
@@ -155,6 +169,9 @@ export default function TemplatesPage() {
     setTitle(template.title || "");
     setSubject(template.subject || "");
     setMessage(template.message || "");
+    setVariables(
+      Array.isArray(template.variables) ? template.variables.join(", ") : ""
+    );
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -187,17 +204,30 @@ export default function TemplatesPage() {
       return;
     }
 
+    const normalizedVariables = variables
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
     setSaving(true);
+
+    const payload = {
+      organization_id: organizationId,
+      channel: type,
+      type,
+      title: cleanTitle,
+      subject: type === "email" ? cleanSubject : null,
+      message: cleanMessage,
+      buttons: [],
+      variables: normalizedVariables,
+      is_active: true,
+      preview_data: {},
+    };
 
     if (editingId) {
       const { error } = await supabase
         .from("message_templates")
-        .update({
-          type,
-          title: cleanTitle,
-          subject: type === "email" ? cleanSubject : null,
-          message: cleanMessage,
-        })
+        .update(payload)
         .eq("id", editingId)
         .eq("organization_id", organizationId);
 
@@ -207,13 +237,7 @@ export default function TemplatesPage() {
         return;
       }
     } else {
-      const { error } = await supabase.from("message_templates").insert({
-        organization_id: organizationId,
-        type,
-        title: cleanTitle,
-        subject: type === "email" ? cleanSubject : null,
-        message: cleanMessage,
-      });
+      const { error } = await supabase.from("message_templates").insert(payload);
 
       if (error) {
         setErrorMsg(error.message);
@@ -415,7 +439,7 @@ export default function TemplatesPage() {
                   <textarea
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Scrivi qui il testo del template..."
+                    placeholder="Scrivi qui il testo del template... puoi usare anche emoji 👋🏡😊"
                     rows={10}
                     style={{
                       width: "100%",
@@ -424,6 +448,23 @@ export default function TemplatesPage() {
                       border: "1px solid #ddd",
                       resize: "vertical",
                       fontFamily: "inherit",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 14, marginBottom: 6 }}>
+                    Variabili dinamiche
+                  </div>
+                  <input
+                    value={variables}
+                    onChange={(e) => setVariables(e.target.value)}
+                    placeholder="Es: nome, agenzia, link_recensioni"
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #ddd",
                     }}
                   />
                 </div>

@@ -54,12 +54,26 @@ export function formatTime(value: string | null) {
   });
 }
 
+export function formatDateOnly(value: string | null) {
+  if (!value) return "-";
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+
+  return d.toLocaleDateString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 export function getFullName(contact: Contact) {
   return `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() || "-";
 }
 
 export function normalizePhoneForWhatsApp(phone: string | null) {
   if (!phone) return null;
+
   const trimmed = phone.trim();
   if (!trimmed) return null;
 
@@ -77,17 +91,27 @@ export function buildWhatsAppUrl(phone: string, text: string) {
   const waPhone = normalized.replace(/^\+/, "");
   if (!waPhone) return null;
 
-  return `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`;
+  const safeText = String(text || "").trim();
+
+  return `https://api.whatsapp.com/send?phone=${waPhone}&text=${encodeURIComponent(
+    safeText
+  )}`;
 }
 
 export function normalizeEmail(email: string | null) {
   if (!email) return null;
+
   const cleaned = email.trim();
   if (!cleaned) return null;
+
   return cleaned;
 }
 
-export function buildGmailComposeUrl(email: string, subject: string, body: string) {
+export function buildGmailComposeUrl(
+  email: string,
+  subject: string,
+  body: string
+) {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) return null;
 
@@ -106,6 +130,45 @@ export function subtractDays(date: Date, days: number) {
   const copy = new Date(date);
   copy.setDate(copy.getDate() - days);
   return copy;
+}
+
+export function getStartOfDay(date: Date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function getEndOfDay(date: Date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+export function isDateInRange(
+  value: string | null,
+  from?: string | null,
+  to?: string | null
+) {
+  if (!value) return false;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  if (from) {
+    const fromDate = new Date(from);
+    if (!Number.isNaN(fromDate.getTime()) && date < fromDate) {
+      return false;
+    }
+  }
+
+  if (to) {
+    const toDate = new Date(to);
+    if (!Number.isNaN(toDate.getTime()) && date > toDate) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function getDaysAgoLabel(value: string | null) {
@@ -130,6 +193,7 @@ export function buildRecentActivityWarningMessage(
   const titlePart = recent.template_title
     ? ` il template "${recent.template_title}"`
     : " un template";
+
   const whenPart = getDaysAgoLabel(recent.created_at) || "recentemente";
   const channelLabel = channel === "whatsapp" ? "WhatsApp" : "Email";
 
@@ -144,6 +208,7 @@ export function getDaysSinceDate(value: string | null) {
 
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
+
   return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
 }
 
@@ -279,7 +344,10 @@ export function getActivityTimelineDotStyle(value: string | null) {
 
 export function getActivityDisplayNote(activity: ContactActivity) {
   const metadata = activity.metadata || {};
-  const fieldLabel = String(metadata.field_label || metadata.field_name || "").trim();
+  const fieldLabel = String(
+    metadata.field_label || metadata.field_name || ""
+  ).trim();
+
   const previousValue = stringifyMetadataValue(metadata.previous_value);
   const newValue = stringifyMetadataValue(metadata.new_value);
 
@@ -321,7 +389,34 @@ export function toComparableValue(value: string | null | undefined) {
 }
 
 export function shouldAutoSetContacted(leadStatus: string | null | undefined) {
-  return !String(leadStatus || "").trim() || toComparableValue(leadStatus) === "nuovo";
+  return (
+    !String(leadStatus || "").trim() || toComparableValue(leadStatus) === "nuovo"
+  );
+}
+
+export function isRealContactActivity(activityType: string | null | undefined) {
+  const normalized = String(activityType || "").trim().toLowerCase();
+
+  return (
+    normalized === "call" ||
+    normalized === "whatsapp" ||
+    normalized === "email" ||
+    normalized === "meeting"
+  );
+}
+
+export function isWorkedLeadStatus(status: string | null | undefined) {
+  return toComparableValue(status) !== "nuovo" && Boolean(toComparableValue(status));
+}
+
+export function isActuallyContactedLeadStatus(status: string | null | undefined) {
+  const normalized = toComparableValue(status);
+
+  if (!normalized) return false;
+  if (normalized === "nuovo") return false;
+  if (normalized === "contattato") return false;
+
+  return true;
 }
 
 export async function updateContactAfterActivity(
@@ -337,7 +432,10 @@ export async function updateContactAfterActivity(
     payload.lead_status = "contattato";
   }
 
-  const { error } = await supabase.from("contacts").update(payload).eq("id", contactId);
+  const { error } = await supabase
+    .from("contacts")
+    .update(payload)
+    .eq("id", contactId);
 
   if (error) {
     throw error;

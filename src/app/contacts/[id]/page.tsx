@@ -50,18 +50,29 @@ export default function ContactDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [c, setC] = useState<EditableContact | null>(null);
-  const [originalContact, setOriginalContact] = useState<EditableContact | null>(null);
+  const [originalContact, setOriginalContact] = useState<EditableContact | null>(
+    null
+  );
 
-  const contactName = useMemo(() => (c ? getFullName(c) : "Scheda contatto"), [c]);
+  const normalizedRole = String(auth.role || "").trim().toLowerCase();
+  const isAdminLike =
+    normalizedRole === "admin" || normalizedRole === "manager";
+
+  const contactName = useMemo(
+    () => (c ? getFullName(c) : "Scheda contatto"),
+    [c]
+  );
 
   async function loadContact() {
+    if (!id) return;
+
     setLoading(true);
     setErrorMsg(null);
 
     const { data, error } = await supabase
       .from("contacts")
       .select(
-        "id, organization_id, first_name, last_name, phone_primary, email_primary, city, contact_type, lead_status, source, assigned_agent_id, created_at, last_contact_at"
+        "id, organization_id, first_name, last_name, phone_primary, email_primary, city, contact_type, lead_status, source, assigned_agent_id, created_at, updated_at, last_contact_at"
       )
       .eq("id", id)
       .single();
@@ -70,22 +81,54 @@ export default function ContactDetailPage() {
       setErrorMsg(error.message);
       setC(null);
       setOriginalContact(null);
-    } else {
-      const contact = data as EditableContact;
-      setC(contact);
-      setOriginalContact(contact);
+      setLoading(false);
+      return;
     }
 
+    const contact = data as EditableContact;
+
+    if (
+      auth.organizationId &&
+      contact.organization_id &&
+      String(contact.organization_id) !== String(auth.organizationId)
+    ) {
+      setErrorMsg("Non puoi visualizzare questo contatto.");
+      setC(null);
+      setOriginalContact(null);
+      setLoading(false);
+      return;
+    }
+
+    if (
+      !isAdminLike &&
+      auth.userId &&
+      contact.assigned_agent_id &&
+      String(contact.assigned_agent_id) !== String(auth.userId)
+    ) {
+      setErrorMsg("Non puoi visualizzare questo contatto.");
+      setC(null);
+      setOriginalContact(null);
+      setLoading(false);
+      return;
+    }
+
+    setC(contact);
+    setOriginalContact(contact);
     setLoading(false);
   }
 
   useEffect(() => {
-    if (!id) return;
+    if (auth.loading) return;
+    if (!auth.isAuthenticated) {
+      router.push("/login");
+      return;
+    }
     loadContact();
-  }, [id]);
+  }, [id, auth.loading, auth.isAuthenticated]);
 
   async function save() {
     if (!c || !originalContact) return;
+
     if (!auth.userId) {
       setErrorMsg("Utente non autenticato.");
       return;
@@ -99,7 +142,10 @@ export default function ContactDetailPage() {
     const changes = diffContactEditableFields(previousValues, nextValues);
     const updatePayload = buildContactUpdatePayload(nextValues);
 
-    const { error } = await supabase.from("contacts").update(updatePayload).eq("id", c.id);
+    const { error } = await supabase
+      .from("contacts")
+      .update(updatePayload)
+      .eq("id", c.id);
 
     if (error) {
       setErrorMsg(error.message);
@@ -114,13 +160,20 @@ export default function ContactDetailPage() {
             organization_id: c.organization_id,
             contact_id: c.id,
             created_by: auth.userId,
-            activity_type: change.field === "lead_status" ? "status_change" : "profile_update",
+            activity_type:
+              change.field === "lead_status"
+                ? "status_change"
+                : "profile_update",
             channel: null,
             template_id: null,
             note:
               change.field === "lead_status"
-                ? `Cambio stato lead: ${change.previousValue || "vuoto"} → ${change.nextValue || "vuoto"}`
-                : `MODIFICA ANAGRAFICA · ${change.label}: ${change.previousValue || "vuoto"} → ${change.nextValue || "vuoto"}`,
+                ? `Cambio stato lead: ${
+                    change.previousValue || "vuoto"
+                  } → ${change.nextValue || "vuoto"}`
+                : `MODIFICA ANAGRAFICA · ${change.label}: ${
+                    change.previousValue || "vuoto"
+                  } → ${change.nextValue || "vuoto"}`,
             metadata:
               change.field === "lead_status"
                 ? {
@@ -188,7 +241,11 @@ export default function ContactDetailPage() {
 
       window.location.href = `tel:${c.phone_primary}`;
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Errore durante la chiamata.");
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Errore durante la chiamata."
+      );
     } finally {
       setActionLoading(false);
     }
@@ -234,7 +291,11 @@ export default function ContactDetailPage() {
 
       window.open(targetUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Errore durante l'apertura di WhatsApp.");
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Errore durante l'apertura di WhatsApp."
+      );
     } finally {
       setActionLoading(false);
     }
@@ -286,13 +347,19 @@ export default function ContactDetailPage() {
 
       window.open(targetUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Errore durante l'apertura di Gmail.");
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Errore durante l'apertura di Gmail."
+      );
     } finally {
       setActionLoading(false);
     }
   }
 
-  if (loading) return <div style={{ padding: 40 }}>Caricamento...</div>;
+  if (loading) {
+    return <div style={{ padding: 40 }}>Caricamento...</div>;
+  }
 
   if (!c) {
     return (
@@ -300,6 +367,7 @@ export default function ContactDetailPage() {
         <button onClick={() => router.back()} style={{ marginBottom: 12 }}>
           ← Indietro
         </button>
+
         <div
           style={{
             background: "#ffecec",
@@ -349,7 +417,8 @@ export default function ContactDetailPage() {
               background: "#fff",
               color: "#111",
               opacity: c.phone_primary ? 1 : 0.5,
-              cursor: !c.phone_primary || actionLoading ? "not-allowed" : "pointer",
+              cursor:
+                !c.phone_primary || actionLoading ? "not-allowed" : "pointer",
             }}
           >
             📞 Chiama
@@ -365,7 +434,8 @@ export default function ContactDetailPage() {
               background: "#fff",
               color: "#111",
               opacity: c.phone_primary ? 1 : 0.5,
-              cursor: !c.phone_primary || actionLoading ? "not-allowed" : "pointer",
+              cursor:
+                !c.phone_primary || actionLoading ? "not-allowed" : "pointer",
             }}
           >
             💬 WhatsApp
@@ -411,8 +481,11 @@ export default function ContactDetailPage() {
       <h2 style={{ marginBottom: 6 }}>{contactName || "Scheda contatto"}</h2>
 
       <div style={{ opacity: 0.7, marginBottom: 6 }}>ID: {c.id}</div>
-      <div style={{ opacity: 0.7, marginBottom: 18 }}>
+      <div style={{ opacity: 0.7, marginBottom: 6 }}>
         Ultimo contatto: {formatDateTime(c.last_contact_at)}
+      </div>
+      <div style={{ opacity: 0.7, marginBottom: 18 }}>
+        Creato il: {formatDateTime(c.created_at)}
       </div>
 
       {errorMsg && (
@@ -447,46 +520,80 @@ export default function ContactDetailPage() {
         >
           <div style={{ fontWeight: 700, marginBottom: 12 }}>Dati contatto</div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+          >
             <input
               value={c.first_name ?? ""}
-              onChange={(e) => setC({ ...c, first_name: e.target.value || null })}
+              onChange={(e) =>
+                setC({ ...c, first_name: e.target.value || null })
+              }
               placeholder="Nome"
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+              }}
             />
 
             <input
               value={c.last_name ?? ""}
               onChange={(e) => setC({ ...c, last_name: e.target.value || null })}
               placeholder="Cognome"
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+              }}
             />
 
             <input
               value={c.phone_primary ?? ""}
-              onChange={(e) => setC({ ...c, phone_primary: e.target.value || null })}
+              onChange={(e) =>
+                setC({ ...c, phone_primary: e.target.value || null })
+              }
               placeholder="Telefono"
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+              }}
             />
 
             <input
               value={c.email_primary ?? ""}
-              onChange={(e) => setC({ ...c, email_primary: e.target.value || null })}
+              onChange={(e) =>
+                setC({ ...c, email_primary: e.target.value || null })
+              }
               placeholder="Email"
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+              }}
             />
 
             <input
               value={c.city ?? ""}
               onChange={(e) => setC({ ...c, city: e.target.value || null })}
               placeholder="Città"
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+              }}
             />
 
             <select
               value={c.contact_type ?? ""}
-              onChange={(e) => setC({ ...c, contact_type: e.target.value || null })}
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
+              onChange={(e) =>
+                setC({ ...c, contact_type: e.target.value || null })
+              }
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+              }}
             >
               <option value="">Tipo (vuoto)</option>
               <option value="owner">owner</option>
@@ -500,8 +607,14 @@ export default function ContactDetailPage() {
 
             <select
               value={c.lead_status ?? ""}
-              onChange={(e) => setC({ ...c, lead_status: e.target.value || null })}
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
+              onChange={(e) =>
+                setC({ ...c, lead_status: e.target.value || null })
+              }
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+              }}
             >
               <option value="">Stato (vuoto)</option>
               <option value="nuovo">nuovo</option>
@@ -538,7 +651,9 @@ export default function ContactDetailPage() {
             background: "#fff",
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 12 }}>Attività / esiti</div>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>
+            Attività / esiti
+          </div>
 
           <Activities
             contactId={c.id}

@@ -1,6 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type AuthContextValue = {
@@ -10,96 +17,131 @@ type AuthContextValue = {
   organizationId: string | null;
   role: string | null;
   fullName: string | null;
+  refreshProfile: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthContextValue>({
+const defaultAuthContextValue: AuthContextValue = {
   loading: true,
   isAuthenticated: false,
   userId: null,
   organizationId: null,
   role: null,
   fullName: null,
-});
+  refreshProfile: async () => {},
+};
+
+const AuthContext = createContext<AuthContextValue>(defaultAuthContextValue);
+
+function normalizeRole(role: unknown): string | null {
+  if (typeof role !== "string") return null;
+
+  const value = role.trim().toLowerCase();
+  return value || null;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [value, setValue] = useState<AuthContextValue>({
-    loading: true,
-    isAuthenticated: false,
-    userId: null,
-    organizationId: null,
-    role: null,
-    fullName: null,
-  });
+  const [value, setValue] = useState<AuthContextValue>(defaultAuthContextValue);
 
-  useEffect(() => {
-    let mounted = true;
+  const loadAuthContext = useCallback(async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-    async function loadAuthContext() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    if (!session?.user) {
+      setValue((prev) => ({
+        ...prev,
+        loading: false,
+        isAuthenticated: false,
+        userId: null,
+        organizationId: null,
+        role: null,
+        fullName: null,
+      }));
+      return;
+    }
 
-      if (!mounted) return;
+    const userId = session.user.id;
 
-      if (!session?.user) {
-        setValue({
-          loading: false,
-          isAuthenticated: false,
-          userId: null,
-          organizationId: null,
-          role: null,
-          fullName: null,
-        });
-        return;
-      }
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("id, organization_id, role, full_name")
+      .eq("id", userId)
+      .single();
 
-      const userId = session.user.id;
-
-      const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("id, organization_id, role, full_name")
-        .eq("id", userId)
-        .single();
-
-      if (!mounted) return;
-
-      if (error || !profile) {
-        setValue({
-          loading: false,
-          isAuthenticated: true,
-          userId,
-          organizationId: null,
-          role: null,
-          fullName: null,
-        });
-        return;
-      }
-
-      setValue({
+    if (error || !profile) {
+      setValue((prev) => ({
+        ...prev,
         loading: false,
         isAuthenticated: true,
         userId,
-        organizationId: profile.organization_id ?? null,
-        role: profile.role ?? null,
-        fullName: profile.full_name ?? null,
-      });
+        organizationId: null,
+        role: null,
+        fullName: null,
+      }));
+      return;
     }
 
-    loadAuthContext();
+    setValue((prev) => ({
+      ...prev,
+      loading: false,
+      isAuthenticated: true,
+      userId,
+      organizationId: profile.organization_id ?? null,
+      role: normalizeRole(profile.role),
+      fullName: profile.full_name?.trim() || null,
+    }));
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function safeLoad() {
+      if (!isMounted) return;
+
+      setValue((prev) => ({
+        ...prev,
+        loading: true,
+      }));
+
+      await loadAuthContext();
+
+      if (!isMounted) return;
+    }
+
+    safeLoad();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
-      loadAuthContext();
+      safeLoad();
     });
 
     return () => {
-      mounted = false;
+      isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadAuthContext]);
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  const refreshProfile = useCallback(async () => {
+    setValue((prev) => ({
+      ...prev,
+      loading: true,
+    }));
+
+    await loadAuthContext();
+  }, [loadAuthContext]);
+
+  const contextValue = useMemo<AuthContextValue>(
+    () => ({
+      ...value,
+      refreshProfile,
+    }),
+    [value, refreshProfile]
+  );
+
+  return (
+    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuthContext() {

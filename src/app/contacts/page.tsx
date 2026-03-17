@@ -8,6 +8,7 @@ import type {
   Agent,
   Contact,
   MessageTemplate,
+  QuickActivityUiType,
   RecentActivityMap,
   SortDirection,
   SortField,
@@ -40,7 +41,7 @@ const DEFAULT_VISIBLE_COLUMNS: VisibleColumnsState = {
   created_at: true,
 };
 
-const DEFAULT_QUICK_ACTIVITY_TYPE = "Note";
+const DEFAULT_QUICK_ACTIVITY_TYPE: QuickActivityUiType = "Note";
 
 export default function Home() {
   const router = useRouter();
@@ -94,13 +95,17 @@ export default function Home() {
     string | null
   >(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
-  const [noteTypeDrafts, setNoteTypeDrafts] = useState<Record<string, string>>({});
+  const [noteTypeDrafts, setNoteTypeDrafts] = useState<Record<string, string>>(
+    {}
+  );
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
 
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
-  const [recentActivities, setRecentActivities] = useState<RecentActivityMap>({});
+  const [recentActivities, setRecentActivities] = useState<RecentActivityMap>(
+    {}
+  );
 
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateModalType, setTemplateModalType] = useState<
@@ -234,8 +239,11 @@ export default function Home() {
         template_id: string | null;
         metadata: Record<string, unknown> | null;
       };
+
       const contactId = String(row.contact_id || "");
-      const activityType = String(row.activity_type || "") as "whatsapp" | "email";
+      const activityType = String(row.activity_type || "") as
+        | "whatsapp"
+        | "email";
       const createdAt = row.created_at || "";
       const templateId = row.template_id || null;
       const metadata = row.metadata || {};
@@ -305,60 +313,59 @@ export default function Home() {
       .eq("organization_id", currentOrganizationId);
 
     function applySharedFilters(query: any) {
-  let q = query;
+      let q = query;
 
-  if (isAgentOnly) {
-    q = q.eq("assigned_agent_id", currentUserId);
-  }
+      if (isAgentOnly) {
+        q = q.eq("assigned_agent_id", currentUserId);
+      }
 
-  if (isAdminLike) {
-    if (nextAdminLeadView === "assigned") {
-      q = q.not("assigned_agent_id", "is", null);
-    } else {
-      q = q.is("assigned_agent_id", null);
+      if (isAdminLike) {
+        if (nextAdminLeadView === "assigned") {
+          q = q.not("assigned_agent_id", "is", null);
+        } else {
+          q = q.is("assigned_agent_id", null);
+        }
+      }
+
+      if (nextType) q = q.eq("contact_type", nextType);
+      if (nextStatus) q = q.eq("lead_status", nextStatus);
+      if (nextSource.trim()) q = q.ilike("source", `%${nextSource.trim()}%`);
+      if (nextOnlyWithPhone) q = q.not("phone_primary", "is", null);
+
+      const s = nextSearch.trim();
+      if (s) {
+        q = q.or(
+          [
+            `first_name.ilike.%${s}%`,
+            `last_name.ilike.%${s}%`,
+            `phone_primary.ilike.%${s}%`,
+            `email_primary.ilike.%${s}%`,
+            `city.ilike.%${s}%`,
+            `contact_type.ilike.%${s}%`,
+            `source.ilike.%${s}%`,
+          ].join(",")
+        );
+      }
+
+      const healthRange = buildHealthFilterRange(nextHealth);
+
+      if (healthRange?.mode === "never") {
+        q = q.is("last_contact_at", null);
+      } else if (healthRange?.before) {
+        q = q.lt("last_contact_at", healthRange.before);
+      } else if (healthRange?.after) {
+        q = q.gte("last_contact_at", healthRange.after);
+      } else if (healthRange?.from && healthRange?.to) {
+        q = q
+          .gte("last_contact_at", healthRange.from)
+          .lte("last_contact_at", healthRange.to);
+      }
+
+      return q;
     }
-  }
 
-  if (nextType) q = q.eq("contact_type", nextType);
-  if (nextStatus) q = q.eq("lead_status", nextStatus);
-  if (nextSource.trim()) q = q.ilike("source", `%${nextSource.trim()}%`);
-  if (nextOnlyWithPhone) q = q.not("phone_primary", "is", null);
-
-  const s = nextSearch.trim();
-  if (s) {
-    q = q.or(
-      [
-        `first_name.ilike.%${s}%`,
-        `last_name.ilike.%${s}%`,
-        `phone_primary.ilike.%${s}%`,
-        `email_primary.ilike.%${s}%`,
-        `city.ilike.%${s}%`,
-        `contact_type.ilike.%${s}%`,
-        `source.ilike.%${s}%`,
-      ].join(",")
-    );
-  }
-
-  const healthRange = buildHealthFilterRange(nextHealth);
-
-  if (healthRange?.mode === "never") {
-    q = q.is("last_contact_at", null);
-  } else if (healthRange?.before) {
-    q = q.lt("last_contact_at", healthRange.before);
-  } else if (healthRange?.after) {
-    q = q.gte("last_contact_at", healthRange.after);
-  } else if (healthRange?.from && healthRange?.to) {
-    q = q.gte("last_contact_at", healthRange.from).lte(
-      "last_contact_at",
-      healthRange.to
-    );
-  }
-
-  return q;
-}
-
-countQuery = applySharedFilters(countQuery);
-dataQuery = applySharedFilters(dataQuery);
+    countQuery = applySharedFilters(countQuery);
+    dataQuery = applySharedFilters(dataQuery);
 
     if (nextSortField === "name") {
       dataQuery = dataQuery.order("first_name", {
@@ -387,7 +394,9 @@ dataQuery = applySharedFilters(dataQuery);
     ]);
 
     if (countError || error) {
-      setErrorMsg(countError?.message || error?.message || "Errore nel caricamento.");
+      setErrorMsg(
+        countError?.message || error?.message || "Errore nel caricamento."
+      );
       setContacts([]);
       setTotal(0);
       setRecentActivities({});
@@ -444,10 +453,12 @@ dataQuery = applySharedFilters(dataQuery);
       const rows = Array.isArray(json) ? json : json?.agents || json?.data || [];
 
       setAgents(
-        rows.map((a: { id: string; full_name?: string | null; email?: string | null }) => ({
-          id: a.id,
-          full_name: a.full_name || a.email || "Agente",
-        }))
+        rows.map(
+          (a: { id: string; full_name?: string | null; email?: string | null }) => ({
+            id: a.id,
+            full_name: a.full_name || a.email || "Agente",
+          })
+        )
       );
     } catch {
       return;
@@ -458,7 +469,8 @@ dataQuery = applySharedFilters(dataQuery);
     setErrorMsg(null);
     setAssignmentLoadingId(contactId);
 
-    const currentContact = contacts.find((contact) => contact.id === contactId) || null;
+    const currentContact =
+      contacts.find((contact) => contact.id === contactId) || null;
     const previousAgentId = currentContact?.assigned_agent_id || null;
     const valueToSave = agentId || null;
 
@@ -475,7 +487,8 @@ dataQuery = applySharedFilters(dataQuery);
 
     if (currentContact?.organization_id && currentUserId) {
       const nextAgent = agents.find((agent) => agent.id === valueToSave) || null;
-      const previousAgent = agents.find((agent) => agent.id === previousAgentId) || null;
+      const previousAgent =
+        agents.find((agent) => agent.id === previousAgentId) || null;
 
       await supabase.from("contact_activities").insert({
         organization_id: currentContact.organization_id,
@@ -484,7 +497,9 @@ dataQuery = applySharedFilters(dataQuery);
         activity_type: "assignment",
         channel: null,
         template_id: null,
-        note: `Lead assegnato: ${previousAgent?.full_name || "non assegnato"} → ${nextAgent?.full_name || "non assegnato"}`,
+        note: `Lead assegnato: ${
+          previousAgent?.full_name || "non assegnato"
+        } → ${nextAgent?.full_name || "non assegnato"}`,
         metadata: {
           source: "contacts_table_assignment",
           previous_assigned_agent_id: previousAgentId,
@@ -499,8 +514,19 @@ dataQuery = applySharedFilters(dataQuery);
     setAssignmentLoadingId(null);
   }
 
-  function getQuickActivityType(contactId: string) {
-    return noteTypeDrafts[contactId] || DEFAULT_QUICK_ACTIVITY_TYPE;
+  function getQuickActivityType(contactId: string): QuickActivityUiType {
+    const value = noteTypeDrafts[contactId];
+    if (
+      value === "Chiamata" ||
+      value === "WhatsApp" ||
+      value === "Email" ||
+      value === "Incontro" ||
+      value === "Note"
+    ) {
+      return value;
+    }
+
+    return DEFAULT_QUICK_ACTIVITY_TYPE;
   }
 
   async function saveQuickNote(contact: Contact) {
@@ -568,7 +594,9 @@ dataQuery = applySharedFilters(dataQuery);
 
       setExpandedNoteContactId(null);
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Errore nel salvataggio.");
+      setErrorMsg(
+        error instanceof Error ? error.message : "Errore nel salvataggio."
+      );
     } finally {
       setSavingNoteId(null);
     }
@@ -755,7 +783,11 @@ dataQuery = applySharedFilters(dataQuery);
       window.open(targetUrl, "_blank", "noopener,noreferrer");
       closeTemplateModal();
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Errore nell'apertura del template.");
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Errore nell'apertura del template."
+      );
       setActionLoading(false);
     }
   }

@@ -50,6 +50,12 @@ export default function Activities({
   }, []);
 
   async function loadActivities() {
+    if (!contactId) {
+      setActivities([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
 
@@ -104,20 +110,23 @@ export default function Activities({
 
       setNote("");
       setType(DEFAULT_ACTIVITY_TYPE);
+
       onActivityCreated?.({
         last_contact_at: result.last_contact_at,
         lead_status: result.lead_status,
       });
+
       await loadActivities();
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Errore nel salvataggio.");
+      setErrorMsg(
+        error instanceof Error ? error.message : "Errore nel salvataggio."
+      );
     } finally {
       setSaving(false);
     }
   }
 
   useEffect(() => {
-    if (!contactId) return;
     loadActivities();
   }, [contactId]);
 
@@ -217,8 +226,9 @@ export default function Activities({
             paddingRight: 4,
           }}
         >
-          {activities.map((activity) => {
+          {activities.map((activity, index) => {
             const dotStyle = getActivityTimelineDotStyle(activity.activity_type);
+            const isLast = index === activities.length - 1;
 
             return (
               <div
@@ -238,15 +248,18 @@ export default function Activities({
                     minHeight: 72,
                   }}
                 >
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 14,
-                      bottom: -18,
-                      width: 2,
-                      background: "#ececec",
-                    }}
-                  />
+                  {!isLast && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 14,
+                        bottom: -18,
+                        width: 2,
+                        background: "#ececec",
+                      }}
+                    />
+                  )}
+
                   <span
                     style={{
                       position: "relative",
@@ -289,7 +302,8 @@ export default function Activities({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {formatTime(activity.created_at)} · {formatDateShort(activity.created_at)}
+                      {formatTime(activity.created_at)} ·{" "}
+                      {formatDateShort(activity.created_at)}
                     </div>
                   </div>
 

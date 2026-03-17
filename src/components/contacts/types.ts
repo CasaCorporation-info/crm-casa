@@ -35,16 +35,19 @@ export const QUICK_ACTIVITY_TYPE_OPTIONS = [
 
 export type QuickActivityUiType = (typeof QUICK_ACTIVITY_TYPE_OPTIONS)[number];
 
-export type ActivityType =
-  | "call"
-  | "whatsapp"
-  | "email"
-  | "meeting"
-  | "note"
-  | "assignment"
-  | "status_change"
-  | "profile_update"
-  | "system";
+export const ACTIVITY_TYPE_OPTIONS = [
+  "call",
+  "whatsapp",
+  "email",
+  "meeting",
+  "note",
+  "assignment",
+  "status_change",
+  "profile_update",
+  "system",
+] as const;
+
+export type ActivityType = (typeof ACTIVITY_TYPE_OPTIONS)[number];
 
 export type ActivityChannel = "whatsapp" | "email" | null;
 
@@ -66,6 +69,7 @@ export type ActivityMetadata = {
   previous_assigned_agent_name?: string | null;
   from_status?: string | null;
   to_status?: string | null;
+  touched_fields?: string[] | null;
   [key: string]: unknown;
 };
 
@@ -82,6 +86,7 @@ export type Contact = {
   source: string | null;
   assigned_agent_id: string | null;
   created_at: string | null;
+  updated_at?: string | null;
   last_contact_at: string | null;
 };
 
@@ -101,20 +106,37 @@ export type UserProfile = {
   id: string;
   role: string | null;
   organization_id: string | null;
+  full_name?: string | null;
 };
 
 export type Agent = {
   id: string;
   full_name: string | null;
+  role?: string | null;
+  organization_id?: string | null;
+};
+
+export type TemplateButtonType = "link" | "redirect" | "phone";
+
+export type TemplateButton = {
+  id: string;
+  label: string;
+  type: TemplateButtonType;
+  value: string;
 };
 
 export type MessageTemplate = {
   id: string;
   organization_id: string;
+  channel: "whatsapp" | "email";
   type: "whatsapp" | "email";
   title: string;
   subject: string | null;
   message: string;
+  buttons: TemplateButton[];
+  variables: string[];
+  is_active: boolean;
+  preview_data?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 };
@@ -166,3 +188,36 @@ export type VisibleColumnKey =
   | "created_at";
 
 export type VisibleColumnsState = Record<VisibleColumnKey, boolean>;
+
+export type DashboardDatePreset =
+  | "today"
+  | "week"
+  | "month"
+  | "custom";
+
+export type DashboardAgentStats = {
+  agent_id: string;
+  agent_name: string;
+  worked_contacts: number;
+  total_activities: number;
+  calls: number;
+  whatsapp: number;
+  emails: number;
+  meetings: number;
+  notes: number;
+  news_found: number;
+  valuations_done: number;
+  listings_taken: number;
+  assigned_leads: number;
+  new_leads_unworked: number;
+};
+
+export type DashboardContactRow = {
+  contact_id: string;
+  full_name: string;
+  last_activity_at: string | null;
+  activities_count: number;
+  last_lead_status: string | null;
+  assigned_agent_name: string | null;
+  activities_summary: string[];
+};

@@ -4,255 +4,248 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthContext } from "@/components/AuthProvider";
 
+type AgentStats = {
+  agent_id: string
+  agent_name: string
+  worked_contacts: number
+  activities: number
+  calls: number
+  whatsapp: number
+  emails: number
+  meetings: number
+  notes: number
+  news: number
+  valuations: number
+  listings: number
+}
+
 type DashboardStats = {
-  totalContacts: number;
-  workedContacts: number;
-  neverContacted: number;
-  contactedToday: number;
-  assignedToMe: number;
-  unassignedContacts: number;
-};
+  contactedToday: number
+  contactedWeek: number
+  totalActivities: number
+  newLeads: number
+  valuations: number
+  listings: number
+}
 
 export default function DashboardPage() {
-  const auth = useAuthContext();
 
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [stats, setStats] = useState<DashboardStats>({
-    totalContacts: 0,
-    workedContacts: 0,
-    neverContacted: 0,
-    contactedToday: 0,
-    assignedToMe: 0,
-    unassignedContacts: 0,
-  });
+  const auth = useAuthContext()
 
-  const currentUserId = auth.userId;
-  const currentOrganizationId = auth.organizationId;
-  const currentRole = String(auth.role || "").trim().toLowerCase();
-  const authReady = !auth.loading;
+  const [loading,setLoading] = useState(true)
 
-  const isAdminLike = currentRole === "admin" || currentRole === "manager";
-  const isAgentOnly = currentRole === "agent";
+  const [stats,setStats] = useState<DashboardStats>({
+    contactedToday:0,
+    contactedWeek:0,
+    totalActivities:0,
+    newLeads:0,
+    valuations:0,
+    listings:0
+  })
 
-  useEffect(() => {
-    async function loadDashboard() {
-      if (!authReady) return;
+  const [agents,setAgents] = useState<AgentStats[]>([])
 
-      if (!auth.isAuthenticated || !currentUserId) {
-        setLoading(false);
-        setErrorMsg("Utente non autenticato.");
-        return;
-      }
+  const role = String(auth.role || "").toLowerCase()
 
-      if (!currentOrganizationId) {
-        setLoading(false);
-        setErrorMsg("organization_id utente mancante.");
-        return;
-      }
+  const isAdmin = role === "admin" || role === "manager"
 
-      setLoading(true);
-      setErrorMsg(null);
+  useEffect(()=>{
+    loadDashboard()
+  },[auth.userId])
 
-      let contactsQuery = supabase
-        .from("contacts")
-        .select(
-          "id, assigned_agent_id, lead_status, last_contact_at, created_at"
-        )
-        .eq("organization_id", currentOrganizationId);
+  async function loadDashboard(){
 
-      if (isAgentOnly) {
-        contactsQuery = contactsQuery.eq("assigned_agent_id", currentUserId);
-      }
+    if(!auth.userId || !auth.organizationId) return
 
-      const { data, error } = await contactsQuery;
+    setLoading(true)
 
-      if (error) {
-        setErrorMsg(error.message);
-        setLoading(false);
-        return;
-      }
+    const today = new Date()
+    const todayStart = new Date(today.setHours(0,0,0,0)).toISOString()
 
-      const rows = data || [];
-      const today = new Date();
-      const todayY = today.getFullYear();
-      const todayM = today.getMonth();
-      const todayD = today.getDate();
+    const week = new Date()
+    week.setDate(week.getDate()-7)
+    const weekStart = week.toISOString()
 
-      let totalContacts = 0;
-      let workedContacts = 0;
-      let neverContacted = 0;
-      let contactedToday = 0;
-      let assignedToMe = 0;
-      let unassignedContacts = 0;
+    let activityQuery = supabase
+      .from("contact_activities")
+      .select("activity_type, created_at, contact_id, created_by")
 
-      for (const row of rows as any[]) {
-        totalContacts += 1;
-
-        const assignedAgentId = row.assigned_agent_id || null;
-        const leadStatus = String(row.lead_status || "")
-          .trim()
-          .toLowerCase();
-        const lastContactAt = row.last_contact_at || null;
-
-        if (assignedAgentId && String(assignedAgentId) === String(currentUserId)) {
-          assignedToMe += 1;
-        }
-
-        if (!assignedAgentId) {
-          unassignedContacts += 1;
-        }
-
-        if (lastContactAt) {
-          workedContacts += 1;
-
-          const dt = new Date(lastContactAt);
-          if (
-            dt.getFullYear() === todayY &&
-            dt.getMonth() === todayM &&
-            dt.getDate() === todayD
-          ) {
-            contactedToday += 1;
-          }
-        }
-
-        if (!lastContactAt || leadStatus === "nuovo") {
-          neverContacted += 1;
-        }
-      }
-
-      setStats({
-        totalContacts,
-        workedContacts,
-        neverContacted,
-        contactedToday,
-        assignedToMe,
-        unassignedContacts,
-      });
-
-      setLoading(false);
+    if(!isAdmin){
+      activityQuery = activityQuery.eq("created_by",auth.userId)
     }
 
-    loadDashboard();
-  }, [
-    authReady,
-    auth.isAuthenticated,
-    currentUserId,
-    currentOrganizationId,
-    isAgentOnly,
-  ]);
+    const {data:activities} = await activityQuery
 
-  return (
-    <div style={{ padding: 40 }}>
-      <h1 style={{ marginBottom: 10 }}>Dashboard</h1>
+    let contactedToday = 0
+    let contactedWeek = 0
+    let totalActivities = activities?.length || 0
 
-      <div style={{ opacity: 0.7, marginBottom: 26 }}>
-        {auth.fullName
-          ? `Benvenuto, ${auth.fullName}`
-          : "Panoramica CRM della tua organization"}
-      </div>
+    const agentMap:Record<string,AgentStats> = {}
 
-      {errorMsg && (
-        <div
-          style={{
-            background: "#ffecec",
-            border: "1px solid #ffb3b3",
-            padding: 12,
-            borderRadius: 10,
-            marginBottom: 16,
-          }}
-        >
-          <b>Errore:</b> {errorMsg}
+    activities?.forEach(a=>{
+
+      const created = new Date(a.created_at)
+
+      if(created >= new Date(todayStart)) contactedToday++
+      if(created >= new Date(weekStart)) contactedWeek++
+
+      const agentId = a.created_by || "unknown"
+
+      if(!agentMap[agentId]){
+        agentMap[agentId] = {
+          agent_id:agentId,
+          agent_name:"Agente",
+          worked_contacts:0,
+          activities:0,
+          calls:0,
+          whatsapp:0,
+          emails:0,
+          meetings:0,
+          notes:0,
+          news:0,
+          valuations:0,
+          listings:0
+        }
+      }
+
+      const agent = agentMap[agentId]
+
+      agent.activities++
+
+      if(a.activity_type==="call") agent.calls++
+      if(a.activity_type==="whatsapp") agent.whatsapp++
+      if(a.activity_type==="email") agent.emails++
+      if(a.activity_type==="meeting") agent.meetings++
+      if(a.activity_type==="note") agent.notes++
+
+    })
+
+    const {data:contacts} = await supabase
+      .from("contacts")
+      .select("lead_status,assigned_agent_id")
+
+    let newLeads = 0
+    let valuations = 0
+    let listings = 0
+
+    contacts?.forEach(c=>{
+
+      if(c.lead_status==="nuovo") newLeads++
+
+      if(c.lead_status==="valutazione effettuata") valuations++
+
+      if(c.lead_status==="incarico preso") listings++
+
+      const agentId = c.assigned_agent_id
+
+      if(agentId && agentMap[agentId]){
+        agentMap[agentId].worked_contacts++
+      }
+
+    })
+
+    setStats({
+      contactedToday,
+      contactedWeek,
+      totalActivities,
+      newLeads,
+      valuations,
+      listings
+    })
+
+    setAgents(Object.values(agentMap))
+
+    setLoading(false)
+  }
+
+  return(
+    <div style={{padding:40}}>
+
+      <h1 style={{marginBottom:30}}>Dashboard</h1>
+
+      {loading && <div>Caricamento...</div>}
+
+      {!loading && (
+        <>
+        <div style={grid}>
+
+          <Stat title="Contatti lavorati oggi" value={stats.contactedToday}/>
+          <Stat title="Contatti lavorati settimana" value={stats.contactedWeek}/>
+          <Stat title="Attività totali" value={stats.totalActivities}/>
+          <Stat title="Lead nuovi" value={stats.newLeads}/>
+          <Stat title="Valutazioni fatte" value={stats.valuations}/>
+          <Stat title="Incarichi presi" value={stats.listings}/>
+
         </div>
+
+        <h2 style={{marginTop:40}}>Performance agenti</h2>
+
+        <table style={table}>
+
+          <thead>
+            <tr>
+              <th>Agente</th>
+              <th>Contatti lavorati</th>
+              <th>Attività</th>
+              <th>Chiamate</th>
+              <th>WhatsApp</th>
+              <th>Email</th>
+              <th>Incontri</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+            {agents.map(a=>(
+              <tr key={a.agent_id}>
+                <td>{a.agent_name}</td>
+                <td>{a.worked_contacts}</td>
+                <td>{a.activities}</td>
+                <td>{a.calls}</td>
+                <td>{a.whatsapp}</td>
+                <td>{a.emails}</td>
+                <td>{a.meetings}</td>
+                <td>{a.notes}</td>
+              </tr>
+            ))}
+
+          </tbody>
+
+        </table>
+        </>
       )}
 
-      <div style={gridStyle}>
-        <StatBox
-          title="Contatti in gestione"
-          value={loading ? "..." : String(stats.totalContacts)}
-        />
-        <StatBox
-          title="Contatti lavorati"
-          value={loading ? "..." : String(stats.workedContacts)}
-        />
-        <StatBox
-          title="Mai contattati"
-          value={loading ? "..." : String(stats.neverContacted)}
-        />
-        <StatBox
-          title="Contattati oggi"
-          value={loading ? "..." : String(stats.contactedToday)}
-        />
-        <StatBox
-          title="Assegnati a me"
-          value={loading ? "..." : String(stats.assignedToMe)}
-        />
-        <StatBox
-          title="Non assegnati"
-          value={loading ? "..." : String(stats.unassignedContacts)}
-        />
-      </div>
-
-      <div style={{ marginTop: 40 }}>
-        <div style={todayBox}>
-          <h2 style={{ margin: 0 }}>Riepilogo rapido</h2>
-
-          <div style={{ marginTop: 14, lineHeight: 1.8 }}>
-            <div>
-              Ruolo: <b>{auth.role || "-"}</b>
-            </div>
-            <div>
-              Organization: <b>{auth.organizationId || "-"}</b>
-            </div>
-            <div>
-              Vista:{" "}
-              <b>{isAdminLike ? "globale organization" : "solo miei contatti"}</b>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
-  );
+  )
 }
 
-function StatBox({ title, value }: { title: string; value: string }) {
-  return (
-    <div style={boxStyle}>
-      <p style={boxTitle}>{title}</p>
-      <p style={boxValue}>{value}</p>
+function Stat({title,value}:{title:string,value:number}){
+
+  return(
+    <div style={card}>
+      <div style={{opacity:0.6,fontSize:14}}>{title}</div>
+      <div style={{fontSize:34,fontWeight:700}}>{value}</div>
     </div>
-  );
+  )
+
 }
 
-const gridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 20,
-};
+const grid={
+  display:"grid",
+  gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",
+  gap:20
+}
 
-const boxStyle: React.CSSProperties = {
-  background: "#ffffff",
-  borderRadius: 12,
-  padding: 20,
-  border: "1px solid #e5e5e5",
-};
+const card={
+  background:"#fff",
+  border:"1px solid #eee",
+  padding:20,
+  borderRadius:12
+}
 
-const boxTitle: React.CSSProperties = {
-  margin: 0,
-  fontSize: 14,
-  color: "#666",
-};
-
-const boxValue: React.CSSProperties = {
-  marginTop: 10,
-  fontSize: 32,
-  fontWeight: "bold",
-};
-
-const todayBox: React.CSSProperties = {
-  background: "#ffffff",
-  borderRadius: 12,
-  padding: 30,
-  border: "1px solid #e5e5e5",
-  maxWidth: 520,
-};
+const table={
+  width:"100%",
+  marginTop:20,
+  borderCollapse:"collapse" as const
+}

@@ -1,9 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import type { MessageTemplate } from "@/components/contacts/types";
+
+const TEMPLATE_EMOJIS = [
+  "👋",
+  "😊",
+  "😉",
+  "📩",
+  "📞",
+  "🏡",
+  "🏠",
+  "🔑",
+  "📍",
+  "⭐",
+  "✅",
+  "💬",
+  "📲",
+  "🤝",
+  "🔥",
+  "🎉",
+  "⏳",
+  "🙏",
+];
 
 type UserProfile = {
   id: string;
@@ -48,6 +69,9 @@ export default function TemplatesPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [variables, setVariables] = useState<string>("");
+
+  const [messageCursorPosition, setMessageCursorPosition] = useState(0);
+  const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const normalizedRole = String(currentUserRole || "")
     .trim()
@@ -159,6 +183,7 @@ export default function TemplatesPage() {
     setSubject("");
     setMessage("");
     setVariables("");
+    setMessageCursorPosition(0);
   }
 
   function startEdit(template: MessageTemplate) {
@@ -172,7 +197,30 @@ export default function TemplatesPage() {
     setVariables(
       Array.isArray(template.variables) ? template.variables.join(", ") : ""
     );
+    setMessageCursorPosition(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleInsertEmoji(emoji: string) {
+    const textarea = messageTextareaRef.current;
+
+    if (!textarea) {
+      setMessage((prev) => `${prev}${emoji}`);
+      return;
+    }
+
+    const start = textarea.selectionStart ?? messageCursorPosition ?? message.length;
+    const end = textarea.selectionEnd ?? messageCursorPosition ?? message.length;
+
+    const nextValue = `${message.slice(0, start)}${emoji}${message.slice(end)}`;
+    setMessage(nextValue);
+
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const nextCursor = start + emoji.length;
+      textarea.setSelectionRange(nextCursor, nextCursor);
+      setMessageCursorPosition(nextCursor);
+    });
   }
 
   async function handleSave() {
@@ -436,10 +484,56 @@ export default function TemplatesPage() {
 
                 <div>
                   <div style={{ fontSize: 14, marginBottom: 6 }}>Messaggio</div>
+
+                  {type === "whatsapp" && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        padding: 10,
+                        marginBottom: 8,
+                        border: "1px solid #eee",
+                        borderRadius: 10,
+                        background: "#fafafa",
+                      }}
+                    >
+                      {TEMPLATE_EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => handleInsertEmoji(emoji)}
+                          style={{
+                            border: "1px solid #ddd",
+                            background: "#fff",
+                            borderRadius: 10,
+                            padding: "6px 10px",
+                            cursor: "pointer",
+                            fontSize: 18,
+                            lineHeight: 1,
+                          }}
+                          title={`Inserisci ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <textarea
+                    ref={messageTextareaRef}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Scrivi qui il testo del template... puoi usare anche emoji 👋🏡😊"
+                    onClick={(e) =>
+                      setMessageCursorPosition(e.currentTarget.selectionStart ?? 0)
+                    }
+                    onKeyUp={(e) =>
+                      setMessageCursorPosition(e.currentTarget.selectionStart ?? 0)
+                    }
+                    onSelect={(e) =>
+                      setMessageCursorPosition(e.currentTarget.selectionStart ?? 0)
+                    }
+                    placeholder="Scrivi qui il testo del template..."
                     rows={10}
                     style={{
                       width: "100%",

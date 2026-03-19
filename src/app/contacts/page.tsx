@@ -90,6 +90,10 @@ export default function Home() {
   const [adminLeadView, setAdminLeadView] = useState<"assigned" | "unassigned">(
     "unassigned"
   );
+  const [selectedAssignedAgentId, setSelectedAssignedAgentId] = useState("");
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  const [bulkAssignAgentId, setBulkAssignAgentId] = useState("");
+  const [bulkAssignLoading, setBulkAssignLoading] = useState(false);
 
   const [expandedNoteContactId, setExpandedNoteContactId] = useState<
     string | null
@@ -140,6 +144,7 @@ export default function Home() {
       filterHealth,
       onlyWithPhone,
       adminLeadView,
+      selectedAssignedAgentId,
       sortField,
       sortDirection,
     }),
@@ -152,6 +157,7 @@ export default function Home() {
       filterHealth,
       onlyWithPhone,
       adminLeadView,
+      selectedAssignedAgentId,
       sortField,
       sortDirection,
     ]
@@ -199,6 +205,10 @@ export default function Home() {
       JSON.stringify(visibleColumns)
     );
   }, [visibleColumns]);
+
+  useEffect(() => {
+    setSelectedContactIds([]);
+  }, [page, search, filterType, filterStatus, filterSource, filterHealth, onlyWithPhone, adminLeadView, selectedAssignedAgentId, sortField, sortDirection]);
 
   async function loadRecentActivitiesForContacts(nextContacts: Contact[]) {
     if (!nextContacts.length) {
@@ -294,6 +304,8 @@ export default function Home() {
     const nextHealth = opts?.filterHealth ?? queryState.filterHealth;
     const nextOnlyWithPhone = opts?.onlyWithPhone ?? queryState.onlyWithPhone;
     const nextAdminLeadView = opts?.adminLeadView ?? queryState.adminLeadView;
+    const nextSelectedAssignedAgentId =
+      opts?.selectedAssignedAgentId ?? queryState.selectedAssignedAgentId;
     const nextSortField = opts?.sortField ?? queryState.sortField;
     const nextSortDirection = opts?.sortDirection ?? queryState.sortDirection;
 
@@ -322,6 +334,10 @@ export default function Home() {
       if (isAdminLike) {
         if (nextAdminLeadView === "assigned") {
           q = q.not("assigned_agent_id", "is", null);
+
+          if (nextSelectedAssignedAgentId) {
+            q = q.eq("assigned_agent_id", nextSelectedAssignedAgentId);
+          }
         } else {
           q = q.is("assigned_agent_id", null);
         }
@@ -512,6 +528,78 @@ export default function Home() {
 
     await loadContacts();
     setAssignmentLoadingId(null);
+  }
+
+  async function assignContactsBulk(contactIds: string[], agentId: string) {
+    if (!contactIds.length) {
+      setErrorMsg("Seleziona almeno un contatto.");
+      return;
+    }
+
+    if (!agentId) {
+      setErrorMsg("Seleziona un agente.");
+      return;
+    }
+
+    if (!currentUserId) {
+      setErrorMsg("Utente non autenticato.");
+      return;
+    }
+
+    setErrorMsg(null);
+    setBulkAssignLoading(true);
+
+    const contactsToAssign = contacts.filter((contact) =>
+      contactIds.includes(contact.id)
+    );
+
+    const nextAgent = agents.find((agent) => agent.id === agentId) || null;
+
+    const { error } = await supabase
+      .from("contacts")
+      .update({ assigned_agent_id: agentId })
+      .in("id", contactIds);
+
+    if (error) {
+      setErrorMsg(error.message);
+      setBulkAssignLoading(false);
+      return;
+    }
+
+    const activityRows = contactsToAssign
+      .filter((contact) => Boolean(contact.organization_id))
+      .map((contact) => {
+        const previousAgent =
+          agents.find((agent) => agent.id === contact.assigned_agent_id) || null;
+
+        return {
+          organization_id: contact.organization_id,
+          contact_id: contact.id,
+          created_by: currentUserId,
+          activity_type: "assignment",
+          channel: null,
+          template_id: null,
+          note: `Lead assegnato: ${
+            previousAgent?.full_name || "non assegnato"
+          } → ${nextAgent?.full_name || "Agente"}`,
+          metadata: {
+            source: "contacts_table_bulk_assignment",
+            previous_assigned_agent_id: contact.assigned_agent_id || null,
+            previous_assigned_agent_name: previousAgent?.full_name || null,
+            assigned_agent_id: agentId,
+            assigned_agent_name: nextAgent?.full_name || null,
+          },
+        };
+      });
+
+    if (activityRows.length > 0) {
+      await supabase.from("contact_activities").insert(activityRows);
+    }
+
+    setSelectedContactIds([]);
+    setBulkAssignAgentId("");
+    await loadContacts();
+    setBulkAssignLoading(false);
   }
 
   function getQuickActivityType(contactId: string): QuickActivityUiType {
@@ -918,6 +1006,9 @@ export default function Home() {
     setOnlyWithPhone(false);
     setSortField("created_at");
     setSortDirection("desc");
+    setSelectedAssignedAgentId("");
+    setSelectedContactIds([]);
+    setBulkAssignAgentId("");
     setPage(1);
     setExpandedNoteContactId(null);
   }
@@ -933,6 +1024,8 @@ export default function Home() {
         <ContactsFilters
           isAdminLike={isAdminLike}
           adminLeadView={adminLeadView}
+          selectedAssignedAgentId={selectedAssignedAgentId}
+          agents={agents}
           search={search}
           filterType={filterType}
           filterStatus={filterStatus}
@@ -945,6 +1038,15 @@ export default function Home() {
           onAdminLeadViewChange={(value) => {
             setPage(1);
             setAdminLeadView(value);
+            setSelectedContactIds([]);
+            setBulkAssignAgentId("");
+            if (value !== "assigned") {
+              setSelectedAssignedAgentId("");
+            }
+          }}
+          onSelectedAssignedAgentIdChange={(value) => {
+            setPage(1);
+            setSelectedAssignedAgentId(value);
           }}
           onSearchChange={(value) => {
             setPage(1);
@@ -1034,6 +1136,34 @@ export default function Home() {
           noteTypeDrafts={noteTypeDrafts}
           savingNoteId={savingNoteId}
           assignmentLoadingId={assignmentLoadingId}
+          selectedContactIds={selectedContactIds}
+          bulkAssignAgentId={bulkAssignAgentId}
+          bulkAssignLoading={bulkAssignLoading}
+          onToggleSelectedContact={(contactId) => {
+            setSelectedContactIds((prev) =>
+              prev.includes(contactId)
+                ? prev.filter((id) => id !== contactId)
+                : [...prev, contactId]
+            );
+          }}
+          onToggleSelectAllCurrentPage={() => {
+            const pageIds = contacts.map((contact) => contact.id);
+            const areAllSelected =
+              pageIds.length > 0 &&
+              pageIds.every((id) => selectedContactIds.includes(id));
+
+            setSelectedContactIds((prev) => {
+              if (areAllSelected) {
+                return prev.filter((id) => !pageIds.includes(id));
+              }
+
+              return Array.from(new Set([...prev, ...pageIds]));
+            });
+          }}
+          onBulkAssignAgentIdChange={setBulkAssignAgentId}
+          onBulkAssign={() =>
+            assignContactsBulk(selectedContactIds, bulkAssignAgentId)
+          }
           onToggleExpandedNote={(contactId) =>
             setExpandedNoteContactId((prev) =>
               prev === contactId ? null : contactId

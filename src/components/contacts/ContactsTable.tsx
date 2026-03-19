@@ -32,6 +32,13 @@ type Props = {
   noteTypeDrafts: Record<string, string>;
   savingNoteId: string | null;
   assignmentLoadingId: string | null;
+  selectedContactIds: string[];
+  bulkAssignAgentId: string;
+  bulkAssignLoading: boolean;
+  onToggleSelectedContact: (contactId: string) => void;
+  onToggleSelectAllCurrentPage: () => void;
+  onBulkAssignAgentIdChange: (value: string) => void;
+  onBulkAssign: () => void;
   onToggleExpandedNote: (contactId: string) => void;
   onViewActivities: (contactId: string) => void;
   onOpenWhatsappTemplate: (contact: Contact) => void;
@@ -62,6 +69,13 @@ export default function ContactsTable({
   noteTypeDrafts,
   savingNoteId,
   assignmentLoadingId,
+  selectedContactIds,
+  bulkAssignAgentId,
+  bulkAssignLoading,
+  onToggleSelectedContact,
+  onToggleSelectAllCurrentPage,
+  onBulkAssignAgentIdChange,
+  onBulkAssign,
   onToggleExpandedNote,
   onViewActivities,
   onOpenWhatsappTemplate,
@@ -83,7 +97,15 @@ export default function ContactsTable({
     (visibleColumns.source ? 1 : 0) +
     (visibleColumns.created_at ? 1 : 0);
 
-  const tableColSpan = baseColumns + (isAdminLike ? 1 : 0);
+  const tableColSpan = baseColumns + (isAdminLike ? 2 : 0);
+
+  const currentPageIds = contacts.map((contact) => contact.id);
+  const hasContacts = currentPageIds.length > 0;
+  const allCurrentPageSelected =
+    hasContacts && currentPageIds.every((id) => selectedContactIds.includes(id));
+  const someCurrentPageSelected = currentPageIds.some((id) =>
+    selectedContactIds.includes(id)
+  );
 
   return (
     <div
@@ -116,9 +138,85 @@ export default function ContactsTable({
         </div>
       </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
+      {isAdminLike && selectedContactIds.length > 0 && (
+        <div
+          style={{
+            padding: 12,
+            borderBottom: "1px solid #ddd",
+            background: "#f8fafc",
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>
+            Selezionati: {selectedContactIds.length}
+          </div>
+
+          <select
+            value={bulkAssignAgentId}
+            onChange={(e) => onBulkAssignAgentIdChange(e.target.value)}
+            disabled={bulkAssignLoading}
+            style={{
+              minWidth: 220,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: "#fff",
+              cursor: bulkAssignLoading ? "not-allowed" : "pointer",
+              opacity: bulkAssignLoading ? 0.7 : 1,
+            }}
+          >
+            <option value="">Seleziona agente</option>
+            {agents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.full_name?.trim() || "Agente"}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={onBulkAssign}
+            disabled={bulkAssignLoading || !bulkAssignAgentId}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #111",
+              background: "#111",
+              color: "#fff",
+              cursor:
+                bulkAssignLoading || !bulkAssignAgentId
+                  ? "not-allowed"
+                  : "pointer",
+              opacity: bulkAssignLoading || !bulkAssignAgentId ? 0.6 : 1,
+            }}
+          >
+            {bulkAssignLoading ? "Assegnazione..." : "Assegna selezionati"}
+          </button>
+        </div>
+      )}
+
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1500 }}>
         <thead>
           <tr style={{ textAlign: "left", background: "#fff" }}>
+            {isAdminLike && (
+              <th style={{ padding: 12, borderBottom: "1px solid #eee", width: 50 }}>
+                <input
+                  type="checkbox"
+                  checked={allCurrentPageSelected}
+                  ref={(input) => {
+                    if (input) {
+                      input.indeterminate =
+                        someCurrentPageSelected && !allCurrentPageSelected;
+                    }
+                  }}
+                  onChange={onToggleSelectAllCurrentPage}
+                  disabled={!hasContacts || loading || bulkAssignLoading}
+                />
+              </th>
+            )}
+
             <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>Nome</th>
             <th style={{ padding: 12, borderBottom: "1px solid #eee" }}>
               Telefono
@@ -171,10 +269,28 @@ export default function ContactsTable({
             const healthStatus = getContactHealthStatus(c.last_contact_at);
             const healthColor = getContactHealthColor(healthStatus);
             const healthLabel = getContactHealthLabel(healthStatus);
+            const isSelected = selectedContactIds.includes(c.id);
 
             return (
               <React.Fragment key={c.id}>
                 <tr>
+                  {isAdminLike && (
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom: "1px solid #f2f2f2",
+                        verticalAlign: "top",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelectedContact(c.id)}
+                        disabled={loading || bulkAssignLoading}
+                      />
+                    </td>
+                  )}
+
                   <td
                     style={{
                       padding: 12,
@@ -378,7 +494,7 @@ export default function ContactsTable({
                       <select
                         value={c.assigned_agent_id ?? ""}
                         onChange={(e) => onAssignContact(c.id, e.target.value)}
-                        disabled={assignmentLoadingId === c.id}
+                        disabled={assignmentLoadingId === c.id || bulkAssignLoading}
                         style={{
                           minWidth: 180,
                           padding: "8px 10px",
@@ -386,10 +502,13 @@ export default function ContactsTable({
                           border: "1px solid #ddd",
                           background: "#fff",
                           cursor:
-                            assignmentLoadingId === c.id
+                            assignmentLoadingId === c.id || bulkAssignLoading
                               ? "not-allowed"
                               : "pointer",
-                          opacity: assignmentLoadingId === c.id ? 0.6 : 1,
+                          opacity:
+                            assignmentLoadingId === c.id || bulkAssignLoading
+                              ? 0.6
+                              : 1,
                         }}
                       >
                         <option value="">

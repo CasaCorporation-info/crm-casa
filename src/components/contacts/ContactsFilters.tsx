@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  Agent,
   SortDirection,
   SortField,
   VisibleColumnKey,
@@ -10,6 +11,8 @@ import type {
 type Props = {
   isAdminLike: boolean;
   adminLeadView: "assigned" | "unassigned";
+  selectedAssignedAgentId: string;
+  agents: Agent[];
   search: string;
   filterType: string;
   filterStatus: string;
@@ -20,6 +23,7 @@ type Props = {
   sortDirection: SortDirection;
   visibleColumns: VisibleColumnsState;
   onAdminLeadViewChange: (value: "assigned" | "unassigned") => void;
+  onSelectedAssignedAgentIdChange: (value: string) => void;
   onSearchChange: (value: string) => void;
   onToggleShowForm: () => void;
   onRefresh: () => void;
@@ -37,6 +41,8 @@ type Props = {
 export default function ContactsFilters({
   isAdminLike,
   adminLeadView,
+  selectedAssignedAgentId,
+  agents,
   search,
   filterType,
   filterStatus,
@@ -47,6 +53,7 @@ export default function ContactsFilters({
   sortDirection,
   visibleColumns,
   onAdminLeadViewChange,
+  onSelectedAssignedAgentIdChange,
   onSearchChange,
   onToggleShowForm,
   onRefresh,
@@ -69,6 +76,7 @@ export default function ContactsFilters({
             gap: 10,
             marginBottom: 18,
             flexWrap: "wrap",
+            alignItems: "center",
           }}
         >
           <button
@@ -106,6 +114,27 @@ export default function ContactsFilters({
           >
             Assegnati
           </button>
+
+          {adminLeadView === "assigned" && (
+            <select
+              value={selectedAssignedAgentId}
+              onChange={(e) => onSelectedAssignedAgentIdChange(e.target.value)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#fff",
+                minWidth: 220,
+              }}
+            >
+              <option value="">Tutti gli agenti</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.full_name || "Agente"}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 

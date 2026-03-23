@@ -1,128 +1,57 @@
-.
-├── README.md
-├── crm-backup
-│   ├── README.md
-│   ├── eslint.config.mjs
-│   ├── next.config.ts
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── postcss.config.mjs
-│   ├── public
-│   │   ├── file.svg
-│   │   ├── globe.svg
-│   │   ├── next.svg
-│   │   ├── vercel.svg
-│   │   └── window.svg
-│   ├── src
-│   │   ├── app
-│   │   │   ├── admin
-│   │   │   │   ├── agents
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── templates
-│   │   │   │       └── page.tsx
-│   │   │   ├── api
-│   │   │   │   └── admin
-│   │   │   │       └── agents
-│   │   │   │           ├── create
-│   │   │   │           │   └── route.ts
-│   │   │   │           ├── delete
-│   │   │   │           │   └── route.ts
-│   │   │   │           ├── list
-│   │   │   │           │   └── route.ts
-│   │   │   │           ├── reset-password
-│   │   │   │           │   └── route.ts
-│   │   │   │           └── update
-│   │   │   │               └── route.ts
-│   │   │   ├── auth
-│   │   │   │   └── callback
-│   │   │   │       └── page.tsx
-│   │   │   ├── contacts
-│   │   │   │   ├── [id]
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── page.tsx
-│   │   │   ├── favicon.ico
-│   │   │   ├── globals.css
-│   │   │   ├── layout.tsx
-│   │   │   ├── login
-│   │   │   │   └── page.tsx
-│   │   │   └── page.tsx
-│   │   ├── components
-│   │   │   ├── AppShell.tsx
-│   │   │   └── SidebarLogoutButton.tsx
-│   │   └── lib
-│   │       ├── supabaseAdmin.ts
-│   │       └── supabaseClient.ts
-│   └── tsconfig.json
-├── eslint.config.mjs
-├── next-env.d.ts
-├── next.config.ts
-├── package-lock.json
-├── package.json
-├── postcss.config.mjs
-├── public
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
-├── src
-│   ├── app
-│   │   ├── admin
-│   │   │   ├── agents
-│   │   │   │   └── page.tsx
-│   │   │   └── templates
-│   │   │       └── page.tsx
-│   │   ├── api
-│   │   │   └── admin
-│   │   │       └── agents
-│   │   │           ├── create
-│   │   │           │   └── route.ts
-│   │   │           ├── delete
-│   │   │           │   └── route.ts
-│   │   │           ├── list
-│   │   │           │   └── route.ts
-│   │   │           ├── reset-password
-│   │   │           │   └── route.ts
-│   │   │           └── update
-│   │   │               └── route.ts
-│   │   ├── auth
-│   │   │   └── callback
-│   │   │       └── page.tsx
-│   │   ├── contacts
-│   │   │   ├── [id]
-│   │   │   │   └── page.tsx
-│   │   │   └── page.tsx
-│   │   ├── favicon.ico
-│   │   ├── globals.css
-│   │   ├── layout.tsx
-│   │   ├── login
-│   │   │   └── page.tsx
-│   │   ├── page.tsx
-│   │   └── pipeline
-│   │       └── page.tsx
-│   ├── components
-│   │   ├── AppShell.tsx
-│   │   ├── AuthGate.tsx
-│   │   ├── AuthProvider.tsx
-│   │   ├── SidebarLogoutButton.tsx
-│   │   ├── contacts
-│   │   │   ├── Activities.tsx
-│   │   │   ├── ContactsFilters.tsx
-│   │   │   ├── ContactsTable.tsx
-│   │   │   ├── CreateContactForm.tsx
-│   │   │   ├── TemplateModal.tsx
-│   │   │   ├── types.ts
-│   │   │   └── utils.ts
-│   │   └── pipeline
-│   │       ├── PipelineBoard.tsx
-│   │       ├── PipelineCard.tsx
-│   │       ├── PipelineColumn.tsx
-│   │       ├── constants.ts
-│   │       └── types.ts
-│   └── lib
-│       ├── supabaseAdmin.ts
-│       └── supabaseClient.ts
-├── struttura-progetto.txt
-└── tsconfig.json
-
-47 directories, 79 files
+src
+  components
+    AuthGate.tsx
+    contacts
+      types.ts
+      CreateContactForm.tsx
+      utils.ts
+      ContactsTable.tsx
+      ContactsFilters.tsx
+      Activities.tsx
+      TemplateModal.tsx
+    AuthProvider.tsx
+    pipeline
+      types.ts
+      constants.ts
+      PipelineColumn.tsx
+      PipelineBoard.tsx
+      PipelineCard.tsx
+    SidebarLogoutButton.tsx
+    AppShell.tsx
+  lib
+    supabaseAdmin.ts
+    supabaseClient.ts
+  app
+    contacts
+      [id]
+        page.tsx
+      page.tsx
+    layout.tsx
+    pipeline
+      page.tsx
+    api
+      admin
+        agents
+          delete
+            route.ts
+          update
+            route.ts
+          list
+            route.ts
+          reset-password
+            route.ts
+          create
+            route.ts
+    favicon.ico
+    login
+      page.tsx
+    auth
+      callback
+        page.tsx
+    globals.css
+    page.tsx
+    admin
+      templates
+        page.tsx
+      agents
+        page.tsx

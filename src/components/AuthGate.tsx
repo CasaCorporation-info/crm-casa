@@ -17,9 +17,15 @@ export default function AuthGate({ children }: AuthGateProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const isLoginPage = pathname === "/login";
+  const isPublicWhatsAppPage = pathname?.startsWith("/w/");
 
   useEffect(() => {
     let mounted = true;
+
+    if (isPublicWhatsAppPage) {
+      setChecking(false);
+      return;
+    }
 
     async function checkAuth() {
       const {
@@ -68,7 +74,11 @@ export default function AuthGate({ children }: AuthGateProps) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [router, pathname, isLoginPage]);
+  }, [router, pathname, isLoginPage, isPublicWhatsAppPage]);
+
+  if (isPublicWhatsAppPage) {
+    return <>{children}</>;
+  }
 
   if (checking) {
     return (

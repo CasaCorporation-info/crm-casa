@@ -1,26 +1,234 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f8fb;
+  --foreground: #0f172a;
+
+  --crm-bg: #f6f8fb;
+  --crm-surface: #ffffff;
+  --crm-surface-soft: #f8fafc;
+
+  --crm-text: #0f172a;
+  --crm-text-soft: #475569;
+  --crm-text-muted: #64748b;
+
+  --crm-border: #e2e8f0;
+  --crm-border-strong: #cbd5e1;
+
+  --crm-primary: #0f172a;
+  --crm-primary-hover: #1e293b;
+  --crm-accent: #c8a46b;
+  --crm-accent-soft: #f5ead7;
+
+  --crm-danger: #b91c1c;
+  --crm-success: #15803d;
+  --crm-warning: #b45309;
+
+  --crm-radius-sm: 10px;
+  --crm-radius-md: 14px;
+  --crm-radius-lg: 18px;
+  --crm-radius-xl: 24px;
+
+  --crm-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --crm-shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --crm-shadow-lg: 0 18px 50px rgba(15, 23, 42, 0.12);
+
+  --crm-sidebar-width: 260px;
+  --font-sans-custom: Inter, Arial, Helvetica, sans-serif;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans-custom);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans-custom);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--crm-bg);
+  color: var(--crm-text);
+  font-family: var(--font-sans-custom);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--crm-border);
+  background: #fff;
+  color: var(--crm-text);
+  border-radius: var(--crm-radius-md);
+  padding: 12px 14px;
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--crm-accent);
+  box-shadow: 0 0 0 4px rgba(200, 164, 107, 0.14);
+}
+
+button {
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.crm-card {
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-lg);
+  box-shadow: var(--crm-shadow-sm);
+}
+
+.crm-page {
+  padding: 24px;
+}
+
+.crm-page-title {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--crm-text);
+}
+
+.crm-page-subtitle {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--crm-text-soft);
+}
+
+.crm-sidebar-link {
+  display: block;
+  padding: 12px 14px;
+  border-radius: var(--crm-radius-md);
+  color: var(--crm-text-soft);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.crm-sidebar-link:hover {
+  background: var(--crm-surface-soft);
+  color: var(--crm-text);
+}
+
+.crm-button-secondary {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--crm-radius-md);
+  border: 1px solid var(--crm-border);
+  background: #fff;
+  color: var(--crm-text);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.crm-button-secondary:hover {
+  background: var(--crm-surface-soft);
+  border-color: var(--crm-border-strong);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* LAYOUT SHELL */
+
+.crm-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: var(--crm-sidebar-width) 1fr;
+}
+
+.crm-sidebar {
+  border-right: 1px solid var(--crm-border);
+  background: var(--crm-surface);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.crm-sidebar-header {
+  margin-bottom: 18px;
+}
+
+.crm-logo {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.crm-logo-sub {
+  font-size: 12px;
+  color: var(--crm-text-muted);
+  margin-top: 2px;
+}
+
+.crm-user {
+  font-size: 12px;
+  color: var(--crm-text-muted);
+  margin-top: 10px;
+}
+
+.crm-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.crm-sidebar-footer {
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+.crm-main {
+  min-width: 0;
+  background: var(--crm-bg);
 }

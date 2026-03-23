@@ -1,0 +1,45 @@
+export const theme = {
+  layout: {
+    sidebarWidth: 260,
+    pageMaxWidth: 1600,
+  },
+  colors: {
+    bg: "#f6f8fb",
+    surface: "#ffffff",
+    surfaceSoft: "#f8fafc",
+    border: "#e2e8f0",
+    borderStrong: "#cbd5e1",
+    text: "#0f172a",
+    textSoft: "#475569",
+    textMuted: "#64748b",
+    primary: "#0f172a",
+    primaryHover: "#1e293b",
+    accent: "#c8a46b",
+    accentSoft: "#f5ead7",
+    danger: "#b91c1c",
+    success: "#15803d",
+    warning: "#b45309",
+  },
+  radius: {
+    sm: 10,
+    md: 14,
+    lg: 18,
+    xl: 24,
+  },
+  shadow: {
+    sm: "0 1px 2px rgba(15, 23, 42, 0.05)",
+    md: "0 8px 24px rgba(15, 23, 42, 0.08)",
+    lg: "0 18px 50px rgba(15, 23, 42, 0.12)",
+  },
+  spacing: {
+    xs: 6,
+    sm: 10,
+    md: 14,
+    lg: 18,
+    xl: 24,
+    xxl: 32,
+  },
+  font: {
+    family: "Inter, Arial, Helvetica, sans-serif",
+  },
+} as const;

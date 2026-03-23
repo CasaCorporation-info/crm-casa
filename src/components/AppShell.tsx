@@ -4,16 +4,6 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthContext } from "@/components/AuthProvider";
 
-const linkStyle: React.CSSProperties = {
-  display: "block",
-  padding: "12px 14px",
-  borderRadius: 12,
-  color: "#111",
-  textDecoration: "none",
-  fontWeight: 600,
-  fontSize: 14,
-};
-
 export default function AppShell({
   children,
 }: {
@@ -27,106 +17,71 @@ export default function AppShell({
   }
 
   const normalizedRole = String(role || "").trim().toLowerCase();
+
   const canSeeTemplates =
     normalizedRole === "admin" ||
     normalizedRole === "agent" ||
     normalizedRole === "manager";
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        gridTemplateColumns: "260px 1fr",
-      }}
-    >
-      <aside
-        style={{
-          borderRight: "1px solid #e5e7eb",
-          background: "#fff",
-          padding: 20,
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800 }}>
-            Casa Corporation
-          </div>
-          <div style={{ fontSize: 13, opacity: 0.6, marginTop: 4 }}>
-            CRM
-          </div>
+    <div className="crm-shell">
+      <aside className="crm-sidebar">
+        {/* HEADER */}
+        <div className="crm-sidebar-header">
+          <div className="crm-logo">Casa Corporation</div>
+          <div className="crm-logo-sub">CRM</div>
 
           {fullName && (
-            <div style={{ fontSize: 12, opacity: 0.6, marginTop: 10 }}>
+            <div className="crm-user">
               {fullName} · {normalizedRole || "user"}
             </div>
           )}
         </div>
 
-        <nav
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            marginTop: 18,
-          }}
-        >
-          <Link href="/" style={linkStyle}>
+        {/* NAV */}
+        <nav className="crm-sidebar-nav">
+          <Link href="/" className="crm-sidebar-link">
             Dashboard
           </Link>
 
-          <Link href="/contacts" style={linkStyle}>
+          <Link href="/contacts" className="crm-sidebar-link">
             Lead
           </Link>
 
-          <Link href="/pipeline" style={linkStyle}>
+          <Link href="/pipeline" className="crm-sidebar-link">
             Pipeline
           </Link>
 
           {canSeeTemplates && (
-            <Link href="/admin/templates" style={linkStyle}>
+            <Link href="/admin/templates" className="crm-sidebar-link">
               Templates
             </Link>
           )}
 
           {normalizedRole === "admin" && (
-            <Link href="/admin/agents" style={linkStyle}>
+            <Link href="/admin/agents" className="crm-sidebar-link">
               Agenti
             </Link>
           )}
 
-          <Link href="/valuator" style={linkStyle}>
+          <Link href="/valuator" className="crm-sidebar-link">
             Valutatore
           </Link>
 
-          <Link href="/due-diligence" style={linkStyle}>
+          <Link href="/due-diligence" className="crm-sidebar-link">
             Due Diligence
           </Link>
         </nav>
 
-        <div style={{ marginTop: "auto", paddingTop: 20 }}>
-          <button
-            onClick={handleLogout}
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "1px solid #e5e7eb",
-              background: "#fff",
-              color: "#111",
-              fontWeight: 600,
-              fontSize: 14,
-              textAlign: "left",
-              cursor: "pointer",
-            }}
-          >
+        {/* FOOTER */}
+        <div className="crm-sidebar-footer">
+          <button onClick={handleLogout} className="crm-button-secondary">
             Logout
           </button>
         </div>
       </aside>
 
-      <main style={{ minWidth: 0 }}>{children}</main>
+      <main className="crm-main">{children}</main>
     </div>
   );
 }

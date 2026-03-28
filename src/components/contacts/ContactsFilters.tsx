@@ -7,6 +7,8 @@ import type {
   VisibleColumnKey,
   VisibleColumnsState,
 } from "./types";
+import { CONTACT_TYPE_OPTIONS, LEAD_STATUS_OPTIONS } from "./types";
+import { formatContactType } from "./utils";
 
 type Props = {
   isAdminLike: boolean;
@@ -209,13 +211,11 @@ export default function ContactsFilters({
           }}
         >
           <option value="">Tutti i tipi</option>
-          <option value="owner">owner</option>
-          <option value="buyer">buyer</option>
-          <option value="investor">investor</option>
-          <option value="tenant">tenant</option>
-          <option value="ex_client">ex_client</option>
-          <option value="lead">lead</option>
-          <option value="partner">partner</option>
+          {CONTACT_TYPE_OPTIONS.map((type) => (
+            <option key={type} value={type}>
+              {formatContactType(type)}
+            </option>
+          ))}
         </select>
 
         <select
@@ -229,16 +229,11 @@ export default function ContactsFilters({
           }}
         >
           <option value="">Tutti gli stati</option>
-          <option value="nuovo">nuovo</option>
-          <option value="contattato">contattato</option>
-          <option value="non interessato">non interessato</option>
-          <option value="informazione">informazione</option>
-          <option value="notizia">notizia</option>
-          <option value="valutazione fissata">valutazione fissata</option>
-          <option value="valutazione effettuata">valutazione effettuata</option>
-          <option value="incarico preso">incarico preso</option>
-          <option value="venduto">venduto</option>
-          <option value="da eliminare">da eliminare</option>
+          {LEAD_STATUS_OPTIONS.map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
         </select>
 
         <select

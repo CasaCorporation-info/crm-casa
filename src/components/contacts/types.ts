@@ -14,16 +14,17 @@ export const LEAD_STATUS_OPTIONS = [
 export type LeadStatus = (typeof LEAD_STATUS_OPTIONS)[number];
 
 export const CONTACT_TYPE_OPTIONS = [
-  "owner",
-  "buyer",
-  "investor",
-  "tenant",
-  "ex_client",
-  "lead",
-  "partner",
+  "cliente_generico",
+  "acquirente",
+  "venditore",
+  "informatore",
+  "investitore",
+  "Ex cliente",
 ] as const;
 
 export type ContactType = (typeof CONTACT_TYPE_OPTIONS)[number];
+
+export const DEFAULT_CONTACT_TYPE = "cliente_generico";
 
 export const QUICK_ACTIVITY_TYPE_OPTIONS = [
   "Chiamata",

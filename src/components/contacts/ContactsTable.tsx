@@ -8,11 +8,11 @@ import type {
   VisibleColumnsState,
 } from "./types";
 import {
+  formatContactType,
   formatDateTime,
   getContactHealthColor,
   getContactHealthLabel,
   getContactHealthStatus,
-  getDaysAgoLabel,
   getFullName,
 } from "./utils";
 
@@ -111,7 +111,6 @@ export default function ContactsTable(props: Props) {
 
   return (
     <div className="crm-card" style={{ overflowX: "auto" }}>
-      {/* HEADER */}
       <div
         style={{
           padding: 16,
@@ -135,7 +134,6 @@ export default function ContactsTable(props: Props) {
         </div>
       </div>
 
-      {/* BULK */}
       {isAdminLike && selectedContactIds.length > 0 && (
         <div
           style={{
@@ -174,7 +172,6 @@ export default function ContactsTable(props: Props) {
         </div>
       )}
 
-      {/* TABLE */}
       <table
         style={{
           width: "100%",
@@ -260,7 +257,7 @@ export default function ContactsTable(props: Props) {
                   )}
                   {visibleColumns.city && <td style={td}>{c.city ?? "-"}</td>}
                   {visibleColumns.type && (
-                    <td style={td}>{c.contact_type ?? "-"}</td>
+                    <td style={td}>{formatContactType(c.contact_type)}</td>
                   )}
                   <td style={td}>{c.lead_status ?? "-"}</td>
                   {visibleColumns.source && (
@@ -295,9 +292,7 @@ export default function ContactsTable(props: Props) {
                     <td style={td}>
                       <select
                         value={c.assigned_agent_id ?? ""}
-                        onChange={(e) =>
-                          onAssignContact(c.id, e.target.value)
-                        }
+                        onChange={(e) => onAssignContact(c.id, e.target.value)}
                       >
                         <option value="">Agente</option>
                         {agents.map((a) => (
@@ -358,7 +353,6 @@ export default function ContactsTable(props: Props) {
         </tbody>
       </table>
 
-      {/* PAGINATION */}
       <div
         style={{
           padding: 14,

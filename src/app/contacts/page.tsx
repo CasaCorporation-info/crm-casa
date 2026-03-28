@@ -78,7 +78,7 @@ export default function Home() {
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
-  const [contactType, setContactType] = useState("owner");
+  const [contactType, setContactType] = useState("cliente generico");
   const [leadStatus, setLeadStatus] = useState("nuovo");
   const [source, setSource] = useState("manual");
 
@@ -984,7 +984,7 @@ export default function Home() {
     setLastName("");
     setPhone("");
     setCity("");
-    setContactType("owner");
+    setContactType("cliente generico");
     setLeadStatus("nuovo");
     setSource("manual");
     setShowForm(false);

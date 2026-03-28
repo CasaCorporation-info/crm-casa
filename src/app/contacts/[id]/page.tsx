@@ -5,10 +5,12 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthContext } from "@/components/AuthProvider";
 import Activities from "@/components/contacts/Activities";
-import type {
-  Contact,
-  ContactFormValues,
-  LeadStatus,
+import {
+  CONTACT_TYPE_OPTIONS,
+  LEAD_STATUS_OPTIONS,
+  type Contact,
+  type ContactFormValues,
+  type LeadStatus,
 } from "@/components/contacts/types";
 import {
   buildContactUpdatePayload,
@@ -16,6 +18,7 @@ import {
   buildWhatsAppUrl,
   createContactActivityAndTouchContact,
   diffContactEditableFields,
+  formatContactType,
   formatDateTime,
   getFullName,
   normalizeEmail,
@@ -595,14 +598,11 @@ export default function ContactDetailPage() {
                 border: "1px solid #ddd",
               }}
             >
-              <option value="">Tipo (vuoto)</option>
-              <option value="owner">owner</option>
-              <option value="buyer">buyer</option>
-              <option value="investor">investor</option>
-              <option value="tenant">tenant</option>
-              <option value="ex_client">ex_client</option>
-              <option value="lead">lead</option>
-              <option value="partner">partner</option>
+              {CONTACT_TYPE_OPTIONS.map((type) => (
+                <option key={type} value={type}>
+                  {formatContactType(type)}
+                </option>
+              ))}
             </select>
 
             <select
@@ -617,16 +617,11 @@ export default function ContactDetailPage() {
               }}
             >
               <option value="">Stato (vuoto)</option>
-              <option value="nuovo">nuovo</option>
-              <option value="contattato">contattato</option>
-              <option value="non interessato">non interessato</option>
-              <option value="informazione">informazione</option>
-              <option value="notizia">notizia</option>
-              <option value="valutazione fissata">valutazione fissata</option>
-              <option value="valutazione effettuata">valutazione effettuata</option>
-              <option value="incarico preso">incarico preso</option>
-              <option value="venduto">venduto</option>
-              <option value="da eliminare">da eliminare</option>
+              {LEAD_STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
             </select>
 
             <input

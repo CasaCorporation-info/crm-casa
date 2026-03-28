@@ -30,6 +30,14 @@ export function formatDateTime(value: string | null) {
   });
 }
 
+export function formatContactType(label: string | null) {
+  if (!label) return "-";
+
+  return label
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
 export function formatDateShort(value: string | null) {
   if (!value) return "-";
 

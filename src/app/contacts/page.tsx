@@ -798,8 +798,20 @@ export default function Home() {
           finalMessage += `\n\n${asset.static_url}`;
         }
 
-if (asset.link_type === "whatsapp_landing") {
+        if (asset.link_type === "whatsapp_landing") {
           const token = crypto.randomUUID();
+
+          const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .select("whatsapp_number")
+            .eq("id", currentUserId)
+            .single();
+
+          if (profileError || !profile?.whatsapp_number) {
+            setErrorMsg("Numero WhatsApp utente non configurato.");
+            setActionLoading(false);
+            return;
+          }
 
           const { error: insertLinkError } = await supabase
             .from("whatsapp_campaign_links")
@@ -809,10 +821,7 @@ if (asset.link_type === "whatsapp_landing") {
               contact_id: templateModalContact.id,
               template_id: selectedTemplate.id,
               campaign_name: asset.name,
-
-              // 🔥 FIX FONDAMENTALE
-              whatsapp_number: "393891641958",
-
+              whatsapp_number: profile.whatsapp_number,
               landing_title: asset.landing_title,
               landing_body: finalMessage,
               landing_footer: asset.landing_footer,

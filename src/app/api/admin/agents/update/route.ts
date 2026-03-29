@@ -15,7 +15,18 @@ type Body = {
   user_id: string;
   full_name: string;
   role: "agent" | "manager";
+  whatsapp_number?: string | null;
 };
+
+function normalizeWhatsappNumber(value: unknown) {
+  if (typeof value !== "string") return null;
+
+  const cleaned = value.replace(/[^\d+]/g, "").trim();
+
+  if (!cleaned) return null;
+
+  return cleaned;
+}
 
 export async function POST(req: Request) {
   try {
@@ -30,6 +41,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as Body;
     const { user_id, full_name, role } = body;
+    const whatsapp_number = normalizeWhatsappNumber(body.whatsapp_number);
 
     if (!user_id) {
       return NextResponse.json(
@@ -130,6 +142,7 @@ export async function POST(req: Request) {
       .update({
         full_name: String(full_name).trim(),
         role,
+        whatsapp_number,
       })
       .eq("id", user_id);
 
@@ -164,6 +177,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       updated_user_id: user_id,
+      whatsapp_number,
       message: "Agente aggiornato con successo",
     });
   } catch (err) {

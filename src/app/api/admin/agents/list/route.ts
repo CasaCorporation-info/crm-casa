@@ -47,7 +47,7 @@ export async function GET(req: Request) {
 
     const { data, error } = await supabaseAdmin
       .from("profiles")
-      .select("id, full_name, role, created_at")
+      .select("id, full_name, role, created_at, whatsapp_number")
       .eq("organization_id", me.organization_id)
       .in("role", ["admin", "manager", "agent"])
       .order("created_at", { ascending: false });

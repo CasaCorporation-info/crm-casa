@@ -9,6 +9,7 @@ type Body = {
   password?: string;
   full_name?: string;
   role: "admin" | "manager" | "agent";
+  whatsapp_number?: string | null;
 };
 
 function randomPassword(len = 14) {
@@ -19,6 +20,16 @@ function randomPassword(len = 14) {
     out += chars[Math.floor(Math.random() * chars.length)];
   }
   return out;
+}
+
+function normalizeWhatsappNumber(value: unknown) {
+  if (typeof value !== "string") return null;
+
+  const cleaned = value.replace(/[^\d+]/g, "").trim();
+
+  if (!cleaned) return null;
+
+  return cleaned;
 }
 
 const ORG_ID = "1573b4fa-eb4a-4fb2-9c7e-fba3ef58a580";
@@ -37,6 +48,7 @@ export async function POST(req: Request) {
 
     const email = (body.email || "").trim().toLowerCase();
     const role = body.role;
+    const whatsapp_number = normalizeWhatsappNumber(body.whatsapp_number);
 
     if (!email || !role) {
       return NextResponse.json(
@@ -48,11 +60,11 @@ export async function POST(req: Request) {
     const password = (body.password || "").trim() || randomPassword();
     const full_name = (body.full_name || "").trim() || null;
 
-    const token = getBearerToken(req);
-
     let supabaseUser:
       | ReturnType<typeof createClient>
       | ReturnType<typeof createServerClient>;
+
+    const token = getBearerToken(req);
 
     if (token) {
       supabaseUser = createClient(
@@ -136,6 +148,7 @@ export async function POST(req: Request) {
       organization_id,
       role,
       full_name,
+      whatsapp_number,
       created_at: new Date().toISOString(),
     });
 
@@ -169,6 +182,7 @@ export async function POST(req: Request) {
       organization_id,
       user_id: newUserId,
       role,
+      whatsapp_number,
       temp_password: password,
     });
   } catch (e: any) {

@@ -14,6 +14,7 @@ type Agent = {
   full_name: string | null;
   role: string | null;
   created_at: string | null;
+  whatsapp_number: string | null;
 };
 
 type CurrentUserProfile = {
@@ -33,6 +34,7 @@ export default function AgentsPage() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState("agent");
+  const [whatsappNumber, setWhatsappNumber] = useState("");
   const [result, setResult] = useState<any>(null);
 
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -43,6 +45,11 @@ export default function AgentsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState("agent");
+  const [editWhatsappNumber, setEditWhatsappNumber] = useState("");
+
+  function normalizeWhatsappNumber(value: string) {
+    return value.replace(/[^\d+]/g, "").trim();
+  }
 
   async function checkAccess() {
     try {
@@ -93,6 +100,8 @@ export default function AgentsPage() {
       return;
     }
 
+    const normalizedWhatsappNumber = normalizeWhatsappNumber(whatsappNumber);
+
     const res = await fetch("/api/admin/agents/create", {
       method: "POST",
       headers: {
@@ -103,6 +112,7 @@ export default function AgentsPage() {
         email,
         full_name: name,
         role,
+        whatsapp_number: normalizedWhatsappNumber || null,
       }),
     });
 
@@ -113,6 +123,7 @@ export default function AgentsPage() {
       setEmail("");
       setName("");
       setRole("agent");
+      setWhatsappNumber("");
       loadAgents();
     }
   }
@@ -159,6 +170,7 @@ export default function AgentsPage() {
     setEditRole(
       agent.role === "manager" || agent.role === "agent" ? agent.role : "agent"
     );
+    setEditWhatsappNumber(agent.whatsapp_number || "");
     setResult(null);
   }
 
@@ -166,6 +178,7 @@ export default function AgentsPage() {
     setEditingId(null);
     setEditName("");
     setEditRole("agent");
+    setEditWhatsappNumber("");
   }
 
   async function saveAgent(agentId: string) {
@@ -182,6 +195,8 @@ export default function AgentsPage() {
         return;
       }
 
+      const normalizedWhatsappNumber = normalizeWhatsappNumber(editWhatsappNumber);
+
       const res = await fetch("/api/admin/agents/update", {
         method: "POST",
         headers: {
@@ -192,6 +207,7 @@ export default function AgentsPage() {
           user_id: agentId,
           full_name: editName,
           role: editRole,
+          whatsapp_number: normalizedWhatsappNumber || null,
         }),
       });
 
@@ -366,6 +382,13 @@ export default function AgentsPage() {
           <option value="manager">Manager</option>
         </select>
 
+        <input
+          placeholder="Numero WhatsApp agente"
+          value={whatsappNumber}
+          onChange={(e) => setWhatsappNumber(e.target.value)}
+          style={{ padding: 8, minWidth: 220 }}
+        />
+
         <button
           onClick={createAgent}
           style={{
@@ -447,6 +470,7 @@ export default function AgentsPage() {
               <tr>
                 <th style={thStyle}>Nome</th>
                 <th style={thStyle}>Ruolo</th>
+                <th style={thStyle}>WhatsApp</th>
                 <th style={thStyle}>Creato il</th>
                 <th style={thStyle}>Azioni</th>
               </tr>
@@ -496,6 +520,19 @@ export default function AgentsPage() {
                             <span>{agent.role || "-"}</span>
                           )}
                         </>
+                      )}
+                    </td>
+
+                    <td style={tdStyle}>
+                      {isEditing ? (
+                        <input
+                          value={editWhatsappNumber}
+                          onChange={(e) => setEditWhatsappNumber(e.target.value)}
+                          placeholder="Es. 393331234567"
+                          style={{ padding: 6, width: "100%" }}
+                        />
+                      ) : (
+                        agent.whatsapp_number || "-"
                       )}
                     </td>
 

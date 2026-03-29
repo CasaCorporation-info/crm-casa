@@ -30,20 +30,20 @@ export async function POST(req: NextRequest) {
 
     const map: Record<string, { label: string; message: string }> = {
       button_1: {
-        label: link.button_1_label,
-        message: link.button_1_message,
+        label: link.button_1_label || "",
+        message: link.button_1_message || "",
       },
       button_2: {
-        label: link.button_2_label,
-        message: link.button_2_message,
+        label: link.button_2_label || "",
+        message: link.button_2_message || "",
       },
       button_3: {
-        label: link.button_3_label,
-        message: link.button_3_message,
+        label: link.button_3_label || "",
+        message: link.button_3_message || "",
       },
       button_4: {
-        label: link.button_4_label,
-        message: link.button_4_message,
+        label: link.button_4_label || "",
+        message: link.button_4_message || "",
       },
     };
 
@@ -51,6 +51,22 @@ export async function POST(req: NextRequest) {
 
     if (!selected) {
       return NextResponse.json({ error: "Pulsante non valido" }, { status: 400 });
+    }
+
+    if (!selected.message.trim()) {
+      return NextResponse.json(
+        { error: "Messaggio pulsante mancante" },
+        { status: 400 }
+      );
+    }
+
+    const whatsappNumber = String(link.whatsapp_number || "").trim();
+
+    if (!whatsappNumber) {
+      return NextResponse.json(
+        { error: "Numero WhatsApp destinatario mancante" },
+        { status: 400 }
+      );
     }
 
     const headersList = await headers();
@@ -76,13 +92,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
 
-    const whatsappUrl = buildWhatsAppUrl(link.whatsapp_number, selected.message);
+    const whatsappUrl = buildWhatsAppUrl(whatsappNumber, selected.message);
+
+    if (!whatsappUrl) {
+      return NextResponse.json(
+        { error: "Impossibile costruire il link WhatsApp" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
       whatsappUrl,
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Errore interno" }, { status: 500 });
   }
 }

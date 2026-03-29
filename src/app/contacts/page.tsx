@@ -208,7 +208,19 @@ export default function Home() {
 
   useEffect(() => {
     setSelectedContactIds([]);
-  }, [page, search, filterType, filterStatus, filterSource, filterHealth, onlyWithPhone, adminLeadView, selectedAssignedAgentId, sortField, sortDirection]);
+  }, [
+    page,
+    search,
+    filterType,
+    filterStatus,
+    filterSource,
+    filterHealth,
+    onlyWithPhone,
+    adminLeadView,
+    selectedAssignedAgentId,
+    sortField,
+    sortDirection,
+  ]);
 
   async function loadRecentActivitiesForContacts(nextContacts: Contact[]) {
     if (!nextContacts.length) {
@@ -437,7 +449,7 @@ export default function Home() {
     const { data, error } = await supabase
       .from("message_templates")
       .select(
-        "id, organization_id, type, title, subject, message, created_at, updated_at"
+        "id, organization_id, type, title, subject, message, linked_asset_id, created_at, updated_at"
       )
       .eq("organization_id", currentOrganizationId)
       .order("created_at", { ascending: false });
@@ -766,9 +778,70 @@ export default function Home() {
       status: "opened",
     };
 
+    let finalMessage = selectedTemplate.message;
+
+    if (selectedTemplate.linked_asset_id) {
+      const { data: asset, error: assetError } = await supabase
+        .from("link_assets")
+        .select("*")
+        .eq("id", selectedTemplate.linked_asset_id)
+        .single();
+
+      if (assetError) {
+        setErrorMsg(assetError.message);
+        setActionLoading(false);
+        return;
+      }
+
+      if (asset) {
+        if (asset.link_type === "static" && asset.static_url) {
+          finalMessage += `\n\n${asset.static_url}`;
+        }
+
+if (asset.link_type === "whatsapp_landing") {
+          const token = crypto.randomUUID();
+
+          const { error: insertLinkError } = await supabase
+            .from("whatsapp_campaign_links")
+            .insert({
+              token,
+              organization_id: templateModalContact.organization_id,
+              contact_id: templateModalContact.id,
+              template_id: selectedTemplate.id,
+              campaign_name: asset.name,
+
+              // 🔥 FIX FONDAMENTALE
+              whatsapp_number: "393891641958",
+
+              landing_title: asset.landing_title,
+              landing_body: finalMessage,
+              landing_footer: asset.landing_footer,
+              button_1_label: asset.button_1_label,
+              button_1_message: asset.button_1_message,
+              button_2_label: asset.button_2_label,
+              button_2_message: asset.button_2_message,
+              button_3_label: asset.button_3_label,
+              button_3_message: asset.button_3_message,
+              button_4_label: asset.button_4_label,
+              button_4_message: asset.button_4_message,
+              is_active: true,
+            });
+
+          if (insertLinkError) {
+            setErrorMsg(insertLinkError.message);
+            setActionLoading(false);
+            return;
+          }
+
+          const landingUrl = `https://whatsapp.holdingcasacorporation.it/w/${token}`;
+          finalMessage += `\n\n${landingUrl}`;
+        }
+      }
+    }
+
     if (templateModalType === "whatsapp") {
       const phone = templateModalContact.phone_primary?.trim() || "";
-      targetUrl = buildWhatsAppUrl(phone, selectedTemplate.message);
+      targetUrl = buildWhatsAppUrl(phone, finalMessage);
 
       if (!targetUrl) {
         setErrorMsg("Numero WhatsApp non valido.");
@@ -794,7 +867,7 @@ export default function Home() {
       targetUrl = buildGmailComposeUrl(
         email,
         selectedTemplate.subject || "",
-        selectedTemplate.message
+        finalMessage
       );
 
       if (!targetUrl) {

@@ -137,6 +137,7 @@ export type MessageTemplate = {
   buttons: TemplateButton[];
   variables: string[];
   is_active: boolean;
+  linked_asset_id?: string | null;
   preview_data?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;

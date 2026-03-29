@@ -32,6 +32,16 @@ type UserProfile = {
   organization_id: string | null;
 };
 
+type LinkAsset = {
+  id: string;
+  organization_id: string;
+  name: string;
+  slug: string;
+  link_type: "static" | "whatsapp_landing";
+  static_url: string | null;
+  is_active: boolean;
+};
+
 function formatDateTime(value: string | null) {
   if (!value) return "-";
 
@@ -55,6 +65,7 @@ export default function TemplatesPage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
 
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [linkAssets, setLinkAssets] = useState<LinkAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -69,6 +80,7 @@ export default function TemplatesPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [variables, setVariables] = useState<string>("");
+  const [linkedAssetId, setLinkedAssetId] = useState<string>("");
 
   const [messageCursorPosition, setMessageCursorPosition] = useState(0);
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -88,6 +100,12 @@ export default function TemplatesPage() {
     if (!filterType) return templates;
     return templates.filter((t) => t.type === filterType);
   }, [templates, filterType]);
+
+  function getLinkAssetName(assetId?: string | null) {
+    if (!assetId) return null;
+    const asset = linkAssets.find((item) => item.id === assetId);
+    return asset?.name || null;
+  }
 
   async function bootstrapAuth() {
     setCheckingAuth(true);
@@ -123,6 +141,41 @@ export default function TemplatesPage() {
     setCheckingAuth(false);
   }
 
+  async function loadLinkAssets(nextOrgId?: string | null) {
+    const orgId = nextOrgId ?? organizationId;
+
+    if (!orgId) {
+      setLinkAssets([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("link_assets")
+      .select("id, organization_id, name, slug, link_type, static_url, is_active")
+      .eq("organization_id", orgId)
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+
+    if (error) {
+      setErrorMsg(error.message);
+      setLinkAssets([]);
+      return;
+    }
+
+    const normalizedAssets: LinkAsset[] = (data || []).map((item) => ({
+      id: String(item.id),
+      organization_id: String(item.organization_id),
+      name: String(item.name || ""),
+      slug: String(item.slug || ""),
+      link_type:
+        item.link_type === "static" ? "static" : "whatsapp_landing",
+      static_url: item.static_url ? String(item.static_url) : null,
+      is_active: Boolean(item.is_active),
+    }));
+
+    setLinkAssets(normalizedAssets);
+  }
+
   async function loadTemplates(nextOrgId?: string | null) {
     const orgId = nextOrgId ?? organizationId;
 
@@ -138,7 +191,7 @@ export default function TemplatesPage() {
     const { data, error } = await supabase
       .from("message_templates")
       .select(
-        "id, organization_id, channel, type, title, subject, message, buttons, variables, is_active, preview_data, created_at, updated_at"
+        "id, organization_id, channel, type, title, subject, message, buttons, variables, is_active, linked_asset_id, preview_data, created_at, updated_at"
       )
       .eq("organization_id", orgId)
       .order("created_at", { ascending: false });
@@ -164,6 +217,7 @@ export default function TemplatesPage() {
         ? t.variables.map((v) => String(v))
         : [],
       is_active: typeof t.is_active === "boolean" ? t.is_active : true,
+      linked_asset_id: t.linked_asset_id || null,
       preview_data:
         t.preview_data && typeof t.preview_data === "object"
           ? (t.preview_data as Record<string, unknown>)
@@ -183,6 +237,7 @@ export default function TemplatesPage() {
     setSubject("");
     setMessage("");
     setVariables("");
+    setLinkedAssetId("");
     setMessageCursorPosition(0);
   }
 
@@ -197,6 +252,7 @@ export default function TemplatesPage() {
     setVariables(
       Array.isArray(template.variables) ? template.variables.join(", ") : ""
     );
+    setLinkedAssetId(template.linked_asset_id || "");
     setMessageCursorPosition(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -209,7 +265,8 @@ export default function TemplatesPage() {
       return;
     }
 
-    const start = textarea.selectionStart ?? messageCursorPosition ?? message.length;
+    const start =
+      textarea.selectionStart ?? messageCursorPosition ?? message.length;
     const end = textarea.selectionEnd ?? messageCursorPosition ?? message.length;
 
     const nextValue = `${message.slice(0, start)}${emoji}${message.slice(end)}`;
@@ -269,6 +326,7 @@ export default function TemplatesPage() {
       buttons: [],
       variables: normalizedVariables,
       is_active: true,
+      linked_asset_id: linkedAssetId || null,
       preview_data: {},
     };
 
@@ -340,6 +398,7 @@ export default function TemplatesPage() {
   useEffect(() => {
     if (!checkingAuth && canView && organizationId) {
       loadTemplates(organizationId);
+      loadLinkAssets(organizationId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkingAuth, organizationId, currentUserRole]);
@@ -436,7 +495,9 @@ export default function TemplatesPage() {
                   <div style={{ fontSize: 14, marginBottom: 6 }}>Tipo</div>
                   <select
                     value={type}
-                    onChange={(e) => setType(e.target.value as "whatsapp" | "email")}
+                    onChange={(e) =>
+                      setType(e.target.value as "whatsapp" | "email")
+                    }
                     style={{
                       width: "100%",
                       padding: "10px 12px",
@@ -467,7 +528,9 @@ export default function TemplatesPage() {
 
                 {type === "email" && (
                   <div>
-                    <div style={{ fontSize: 14, marginBottom: 6 }}>Oggetto email</div>
+                    <div style={{ fontSize: 14, marginBottom: 6 }}>
+                      Oggetto email
+                    </div>
                     <input
                       value={subject}
                       onChange={(e) => setSubject(e.target.value)}
@@ -544,6 +607,30 @@ export default function TemplatesPage() {
                       fontFamily: "inherit",
                     }}
                   />
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 14, marginBottom: 6 }}>
+                    Allega link
+                  </div>
+                  <select
+                    value={linkedAssetId}
+                    onChange={(e) => setLinkedAssetId(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #ddd",
+                      background: "#fff",
+                    }}
+                  >
+                    <option value="">Nessun link allegato</option>
+                    {linkAssets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.name} ({asset.link_type})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -651,103 +738,119 @@ export default function TemplatesPage() {
               </div>
             ) : (
               <div style={{ display: "grid", gap: 0 }}>
-                {filteredTemplates.map((template) => (
-                  <div
-                    key={template.id}
-                    style={{
-                      padding: 16,
-                      borderBottom: "1px solid #f0f0f0",
-                    }}
-                  >
+                {filteredTemplates.map((template) => {
+                  const linkedAssetName = getLinkAssetName(
+                    template.linked_asset_id
+                  );
+
+                  return (
                     <div
+                      key={template.id}
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        alignItems: "start",
-                        flexWrap: "wrap",
+                        padding: 16,
+                        borderBottom: "1px solid #f0f0f0",
                       }}
                     >
-                      <div style={{ flex: 1, minWidth: 260 }}>
-                        <div
-                          style={{
-                            display: "inline-block",
-                            fontSize: 12,
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            border: "1px solid #ddd",
-                            marginBottom: 8,
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {template.type}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          alignItems: "start",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 260 }}>
+                          <div
+                            style={{
+                              display: "inline-block",
+                              fontSize: 12,
+                              padding: "4px 8px",
+                              borderRadius: 999,
+                              border: "1px solid #ddd",
+                              marginBottom: 8,
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            {template.type}
+                          </div>
+
+                          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                            {template.title}
+                          </div>
+
+                          {template.type === "email" && (
+                            <div style={{ marginBottom: 8 }}>
+                              <b>Oggetto:</b> {template.subject || "-"}
+                            </div>
+                          )}
+
+                          {linkedAssetName && (
+                            <div style={{ marginBottom: 8 }}>
+                              <b>Link allegato:</b> {linkedAssetName}
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              whiteSpace: "pre-wrap",
+                              opacity: 0.9,
+                              lineHeight: 1.5,
+                              marginBottom: 10,
+                            }}
+                          >
+                            {template.message}
+                          </div>
+
+                          <div style={{ fontSize: 12, opacity: 0.65 }}>
+                            Creato: {formatDateTime(template.created_at)} ·
+                            Aggiornato: {formatDateTime(template.updated_at)}
+                          </div>
                         </div>
 
-                        <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                          {template.title}
-                        </div>
+                        {canManage && (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              onClick={() => startEdit(template)}
+                              style={{
+                                padding: "8px 12px",
+                                borderRadius: 10,
+                                border: "1px solid #ddd",
+                                background: "#fff",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Modifica
+                            </button>
 
-                        {template.type === "email" && (
-                          <div style={{ marginBottom: 8 }}>
-                            <b>Oggetto:</b> {template.subject || "-"}
+                            <button
+                              onClick={() =>
+                                handleDelete(template.id, template.title || "Template")
+                              }
+                              disabled={deletingId === template.id}
+                              style={{
+                                padding: "8px 12px",
+                                borderRadius: 10,
+                                border: "1px solid #111",
+                                background: "#111",
+                                color: "#fff",
+                                cursor:
+                                  deletingId === template.id
+                                    ? "not-allowed"
+                                    : "pointer",
+                                opacity: deletingId === template.id ? 0.7 : 1,
+                              }}
+                            >
+                              {deletingId === template.id
+                                ? "Eliminazione..."
+                                : "Elimina"}
+                            </button>
                           </div>
                         )}
-
-                        <div
-                          style={{
-                            whiteSpace: "pre-wrap",
-                            opacity: 0.9,
-                            lineHeight: 1.5,
-                            marginBottom: 10,
-                          }}
-                        >
-                          {template.message}
-                        </div>
-
-                        <div style={{ fontSize: 12, opacity: 0.65 }}>
-                          Creato: {formatDateTime(template.created_at)} · Aggiornato:{" "}
-                          {formatDateTime(template.updated_at)}
-                        </div>
                       </div>
-
-                      {canManage && (
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <button
-                            onClick={() => startEdit(template)}
-                            style={{
-                              padding: "8px 12px",
-                              borderRadius: 10,
-                              border: "1px solid #ddd",
-                              background: "#fff",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Modifica
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              handleDelete(template.id, template.title || "Template")
-                            }
-                            disabled={deletingId === template.id}
-                            style={{
-                              padding: "8px 12px",
-                              borderRadius: 10,
-                              border: "1px solid #111",
-                              background: "#111",
-                              color: "#fff",
-                              cursor:
-                                deletingId === template.id ? "not-allowed" : "pointer",
-                              opacity: deletingId === template.id ? 0.7 : 1,
-                            }}
-                          >
-                            {deletingId === template.id ? "Eliminazione..." : "Elimina"}
-                          </button>
-                        </div>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

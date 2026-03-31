@@ -796,6 +796,13 @@ export default function Home() {
       if (asset) {
         if (asset.link_type === "static" && asset.static_url) {
           finalMessage += `\n\n${asset.static_url}`;
+          metadata = {
+            ...metadata,
+            link_type: "static",
+            linked_asset_id: asset.id,
+            linked_asset_name: asset.name || null,
+            static_url: asset.static_url,
+          };
         }
 
         if (asset.link_type === "whatsapp_landing") {
@@ -820,7 +827,7 @@ export default function Home() {
               organization_id: templateModalContact.organization_id,
               contact_id: templateModalContact.id,
               template_id: selectedTemplate.id,
-              campaign_name: asset.name,
+              campaign_name: selectedTemplate.title,
               whatsapp_number: profile.whatsapp_number,
               landing_title: asset.landing_title,
               landing_body: finalMessage,
@@ -844,6 +851,17 @@ export default function Home() {
 
           const landingUrl = `https://whatsapp.holdingcasacorporation.it/w/${token}`;
           finalMessage += `\n\n${landingUrl}`;
+
+          metadata = {
+            ...metadata,
+            link_type: "whatsapp_landing",
+            linked_asset_id: asset.id,
+            linked_asset_name: asset.name || null,
+            campaign_name: selectedTemplate.title,
+            whatsapp_sender_number: profile.whatsapp_number,
+            landing_token: token,
+            landing_url: landingUrl,
+          };
         }
       }
     }

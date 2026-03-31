@@ -23,6 +23,11 @@ export default function AppShell({
     normalizedRole === "agent" ||
     normalizedRole === "manager";
 
+  const canSeeWhatsAppAnalytics =
+    normalizedRole === "admin" ||
+    normalizedRole === "agent" ||
+    normalizedRole === "manager";
+
   return (
     <div className="crm-shell">
       <aside className="crm-sidebar">
@@ -55,6 +60,12 @@ export default function AppShell({
           {canSeeTemplates && (
             <Link href="/admin/templates" className="crm-sidebar-link">
               Templates
+            </Link>
+          )}
+
+          {canSeeWhatsAppAnalytics && (
+            <Link href="/whatsapp-analytics" className="crm-sidebar-link">
+              WhatsApp Analytics
             </Link>
           )}
 

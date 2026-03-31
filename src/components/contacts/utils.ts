@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabaseClient";
+import { normalizeWhatsAppNumber } from "@/lib/whatsappLinks";
 import type {
   ActivityChannel,
   ActivityMetadata,
@@ -82,28 +83,17 @@ export function getFullName(contact: Contact) {
 export function normalizePhoneForWhatsApp(phone: string | null) {
   if (!phone) return null;
 
-  const trimmed = phone.trim();
-  if (!trimmed) return null;
-
-  if (trimmed.startsWith("+")) {
-    return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-  }
-
-  return trimmed.replace(/\D/g, "");
+  const normalized = normalizeWhatsAppNumber(phone);
+  return normalized || null;
 }
 
 export function buildWhatsAppUrl(phone: string, text: string) {
   const normalized = normalizePhoneForWhatsApp(phone);
   if (!normalized) return null;
 
-  const waPhone = normalized.replace(/^\+/, "");
-  if (!waPhone) return null;
-
   const safeText = String(text || "").trim();
 
-  return `https://api.whatsapp.com/send?phone=${waPhone}&text=${encodeURIComponent(
-    safeText
-  )}`;
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(safeText)}`;
 }
 
 export function normalizeEmail(email: string | null) {

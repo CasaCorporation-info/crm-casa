@@ -51,6 +51,7 @@ export default function ContactDetailPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [c, setC] = useState<EditableContact | null>(null);
   const [originalContact, setOriginalContact] = useState<EditableContact | null>(
@@ -210,6 +211,66 @@ export default function ContactDetailPage() {
     setC(updatedContact);
     setOriginalContact(updatedContact);
     setSaving(false);
+  }
+
+  async function handleDeleteContact() {
+    if (!c?.id) return;
+
+    if (!isAdminLike) {
+      setErrorMsg("Solo admin o manager possono eliminare un contatto.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Confermi l'eliminazione definitiva del contatto "${contactName}"?\n\nQuesta azione non si può annullare.`
+    );
+
+    if (!confirmed) return;
+
+    setDeleteLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setErrorMsg("Sessione non valida. Fai di nuovo login.");
+        setDeleteLoading(false);
+        return;
+      }
+
+      const response = await fetch("/api/contacts/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          contact_id: c.id,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setErrorMsg(result?.error || "Errore durante l'eliminazione.");
+        setDeleteLoading(false);
+        return;
+      }
+
+      router.push("/contacts");
+      router.refresh();
+    } catch (error) {
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Errore durante l'eliminazione del contatto."
+      );
+      setDeleteLoading(false);
+    }
   }
 
   async function handleCallClick() {
@@ -412,7 +473,7 @@ export default function ContactDetailPage() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
             onClick={handleCallClick}
-            disabled={!c.phone_primary || actionLoading}
+            disabled={!c.phone_primary || actionLoading || deleteLoading}
             style={{
               padding: "10px 14px",
               borderRadius: 10,
@@ -421,7 +482,9 @@ export default function ContactDetailPage() {
               color: "#111",
               opacity: c.phone_primary ? 1 : 0.5,
               cursor:
-                !c.phone_primary || actionLoading ? "not-allowed" : "pointer",
+                !c.phone_primary || actionLoading || deleteLoading
+                  ? "not-allowed"
+                  : "pointer",
             }}
           >
             📞 Chiama
@@ -429,7 +492,7 @@ export default function ContactDetailPage() {
 
           <button
             onClick={handleWhatsAppClick}
-            disabled={!c.phone_primary || actionLoading}
+            disabled={!c.phone_primary || actionLoading || deleteLoading}
             style={{
               padding: "10px 14px",
               borderRadius: 10,
@@ -438,7 +501,9 @@ export default function ContactDetailPage() {
               color: "#111",
               opacity: c.phone_primary ? 1 : 0.5,
               cursor:
-                !c.phone_primary || actionLoading ? "not-allowed" : "pointer",
+                !c.phone_primary || actionLoading || deleteLoading
+                  ? "not-allowed"
+                  : "pointer",
             }}
           >
             💬 WhatsApp
@@ -446,7 +511,9 @@ export default function ContactDetailPage() {
 
           <button
             onClick={handleEmailClick}
-            disabled={!normalizeTextInput(c.email_primary) || actionLoading}
+            disabled={
+              !normalizeTextInput(c.email_primary) || actionLoading || deleteLoading
+            }
             style={{
               padding: "10px 14px",
               borderRadius: 10,
@@ -455,7 +522,9 @@ export default function ContactDetailPage() {
               color: "#111",
               opacity: normalizeTextInput(c.email_primary) ? 1 : 0.5,
               cursor:
-                !normalizeTextInput(c.email_primary) || actionLoading
+                !normalizeTextInput(c.email_primary) ||
+                actionLoading ||
+                deleteLoading
                   ? "not-allowed"
                   : "pointer",
             }}
@@ -465,19 +534,40 @@ export default function ContactDetailPage() {
 
           <button
             onClick={save}
-            disabled={saving}
+            disabled={saving || deleteLoading}
             style={{
               padding: "10px 14px",
               borderRadius: 10,
               border: "1px solid #111",
               background: "#111",
               color: "#fff",
-              cursor: saving ? "not-allowed" : "pointer",
-              opacity: saving ? 0.7 : 1,
+              cursor: saving || deleteLoading ? "not-allowed" : "pointer",
+              opacity: saving || deleteLoading ? 0.7 : 1,
             }}
           >
             {saving ? "Salvataggio..." : "Salva"}
           </button>
+
+          {isAdminLike && (
+            <button
+              onClick={handleDeleteContact}
+              disabled={deleteLoading || saving || actionLoading}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #b42318",
+                background: "#fff",
+                color: "#b42318",
+                cursor:
+                  deleteLoading || saving || actionLoading
+                    ? "not-allowed"
+                    : "pointer",
+                opacity: deleteLoading || saving || actionLoading ? 0.7 : 1,
+              }}
+            >
+              {deleteLoading ? "Eliminazione..." : "🗑 Elimina contatto"}
+            </button>
+          )}
         </div>
       </div>
 

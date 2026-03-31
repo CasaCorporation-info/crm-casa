@@ -28,8 +28,10 @@ export type WhatsAppCampaignLinkRow = {
 
 export function normalizeWhatsAppNumber(input: string) {
   const digits = input.replace(/\D/g, "");
+  if (!digits) return "";
+
   if (digits.startsWith("39")) return digits;
-  if (digits.startsWith("0")) return `39${digits.slice(1)}`;
+
   return `39${digits}`;
 }
 

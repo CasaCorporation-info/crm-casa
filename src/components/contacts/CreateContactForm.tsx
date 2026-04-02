@@ -45,21 +45,21 @@ export default function CreateContactForm({
   if (!show) return null;
 
   return (
-    <div
-      style={{
-        border: "1px solid #ddd",
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 18,
-        background: "#fff",
-      }}
-    >
-      <div style={{ fontWeight: 700, marginBottom: 10 }}>Nuovo contatto</div>
+    <div className="crm-card" style={{ padding: 16, marginBottom: 18 }}>
+      <div
+        style={{
+          fontWeight: 700,
+          marginBottom: 12,
+          fontSize: 16,
+        }}
+      >
+        Nuovo contatto
+      </div>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
           gap: 12,
         }}
       >
@@ -67,54 +67,29 @@ export default function CreateContactForm({
           value={firstName}
           onChange={(e) => onFirstNameChange(e.target.value)}
           placeholder="Nome"
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-          }}
         />
 
         <input
           value={lastName}
           onChange={(e) => onLastNameChange(e.target.value)}
           placeholder="Cognome"
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-          }}
         />
 
         <input
           value={phone}
           onChange={(e) => onPhoneChange(e.target.value)}
           placeholder="Telefono"
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-          }}
         />
 
         <input
           value={city}
           onChange={(e) => onCityChange(e.target.value)}
           placeholder="Città"
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-          }}
         />
 
         <select
           value={contactType}
           onChange={(e) => onContactTypeChange(e.target.value)}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-          }}
         >
           {CONTACT_TYPE_OPTIONS.map((type) => (
             <option key={type} value={type}>
@@ -126,11 +101,6 @@ export default function CreateContactForm({
         <select
           value={leadStatus}
           onChange={(e) => onLeadStatusChange(e.target.value)}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-          }}
         >
           {LEAD_STATUS_OPTIONS.map((status) => (
             <option key={status} value={status}>
@@ -143,25 +113,26 @@ export default function CreateContactForm({
           value={source}
           onChange={(e) => onSourceChange(e.target.value)}
           placeholder="Fonte (es: immobiliare, idealista, whatsapp...)"
-          style={{
-            gridColumn: "1 / -1",
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-          }}
+          style={{ gridColumn: "1 / -1" }}
         />
       </div>
 
-      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          marginTop: 14,
+          flexWrap: "wrap",
+        }}
+      >
         <button
           onClick={onSave}
+          className="crm-button-secondary"
           style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid #111",
             background: "#111",
             color: "#fff",
-            cursor: "pointer",
+            border: "1px solid #111",
+            minWidth: 140,
           }}
         >
           Salva contatto
@@ -169,12 +140,9 @@ export default function CreateContactForm({
 
         <button
           onClick={onCancel}
+          className="crm-button-secondary"
           style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-            background: "#fff",
-            cursor: "pointer",
+            minWidth: 120,
           }}
         >
           Annulla

@@ -1114,198 +1114,208 @@ export default function Home() {
   }
 
   return (
-    <main style={{ padding: 32 }}>
-      <div style={{ maxWidth: 1700 }}>
-        <h1 style={{ marginBottom: 6 }}>Lead Gestion</h1>
-        <div style={{ opacity: 0.7, marginBottom: 18 }}>
-          Database contatti Casa Corporation
-        </div>
-
-        <ContactsFilters
-          isAdminLike={isAdminLike}
-          adminLeadView={adminLeadView}
-          selectedAssignedAgentId={selectedAssignedAgentId}
-          agents={agents}
-          search={search}
-          filterType={filterType}
-          filterStatus={filterStatus}
-          filterSource={filterSource}
-          onlyWithPhone={onlyWithPhone}
-          filterHealth={filterHealth}
-          sortField={sortField}
-          sortDirection={sortDirection}
-          visibleColumns={visibleColumns}
-          onAdminLeadViewChange={(value) => {
-            setPage(1);
-            setAdminLeadView(value);
-            setSelectedContactIds([]);
-            setBulkAssignAgentId("");
-            if (value !== "assigned") {
-              setSelectedAssignedAgentId("");
-            }
+    <>
+      <main className="crm-page">
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 1700,
+            margin: "0 auto",
           }}
-          onSelectedAssignedAgentIdChange={(value) => {
-            setPage(1);
-            setSelectedAssignedAgentId(value);
-          }}
-          onSearchChange={(value) => {
-            setPage(1);
-            setSearch(value);
-          }}
-          onToggleShowForm={() => setShowForm((v) => !v)}
-          onRefresh={handleRefresh}
-          onFilterTypeChange={(value) => {
-            setPage(1);
-            setFilterType(value);
-          }}
-          onFilterStatusChange={(value) => {
-            setPage(1);
-            setFilterStatus(value);
-          }}
-          onFilterSourceChange={(value) => {
-            setPage(1);
-            setFilterSource(value);
-          }}
-          onOnlyWithPhoneChange={(value) => {
-            setPage(1);
-            setOnlyWithPhone(value);
-          }}
-          onFilterHealthChange={(value) => {
-            setPage(1);
-            setFilterHealth(value);
-          }}
-          onSortFieldChange={(value) => {
-            setPage(1);
-            setSortField(value);
-          }}
-          onSortDirectionChange={(value) => {
-            setPage(1);
-            setSortDirection(value);
-          }}
-          onToggleVisibleColumn={handleToggleVisibleColumn}
-          onResetFilters={handleResetFilters}
-        />
-
-        <CreateContactForm
-          show={showForm}
-          firstName={firstName}
-          lastName={lastName}
-          phone={phone}
-          city={city}
-          contactType={contactType}
-          leadStatus={leadStatus}
-          source={source}
-          onFirstNameChange={setFirstName}
-          onLastNameChange={setLastName}
-          onPhoneChange={setPhone}
-          onCityChange={setCity}
-          onContactTypeChange={setContactType}
-          onLeadStatusChange={setLeadStatus}
-          onSourceChange={setSource}
-          onSave={createContact}
-          onCancel={() => setShowForm(false)}
-        />
-
-        {errorMsg && (
-          <div
-            style={{
-              background: "#ffecec",
-              border: "1px solid #ffb3b3",
-              padding: 12,
-              borderRadius: 10,
-              marginBottom: 14,
-            }}
-          >
-            <b>Errore:</b> {errorMsg}
+        >
+          <div style={{ marginBottom: 18 }}>
+            <h1 className="crm-page-title">Lead Gestion</h1>
+            <div className="crm-page-subtitle">
+              Database contatti Casa Corporation
+            </div>
           </div>
-        )}
 
-        <ContactsTable
-          contacts={contacts}
-          loading={loading}
-          total={total}
-          page={page}
-          totalPages={totalPages}
-          loadingTemplates={loadingTemplates}
-          isAdminLike={isAdminLike}
-          agents={agents}
-          recentActivities={recentActivities}
-          visibleColumns={visibleColumns}
-          expandedNoteContactId={expandedNoteContactId}
-          noteDrafts={noteDrafts}
-          noteTypeDrafts={noteTypeDrafts}
-          savingNoteId={savingNoteId}
-          assignmentLoadingId={assignmentLoadingId}
-          selectedContactIds={selectedContactIds}
-          bulkAssignAgentId={bulkAssignAgentId}
-          bulkAssignLoading={bulkAssignLoading}
-          onToggleSelectedContact={(contactId) => {
-            setSelectedContactIds((prev) =>
-              prev.includes(contactId)
-                ? prev.filter((id) => id !== contactId)
-                : [...prev, contactId]
-            );
-          }}
-          onToggleSelectAllCurrentPage={() => {
-            const pageIds = contacts.map((contact) => contact.id);
-            const areAllSelected =
-              pageIds.length > 0 &&
-              pageIds.every((id) => selectedContactIds.includes(id));
-
-            setSelectedContactIds((prev) => {
-              if (areAllSelected) {
-                return prev.filter((id) => !pageIds.includes(id));
+          <ContactsFilters
+            isAdminLike={isAdminLike}
+            adminLeadView={adminLeadView}
+            selectedAssignedAgentId={selectedAssignedAgentId}
+            agents={agents}
+            search={search}
+            filterType={filterType}
+            filterStatus={filterStatus}
+            filterSource={filterSource}
+            onlyWithPhone={onlyWithPhone}
+            filterHealth={filterHealth}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            visibleColumns={visibleColumns}
+            onAdminLeadViewChange={(value) => {
+              setPage(1);
+              setAdminLeadView(value);
+              setSelectedContactIds([]);
+              setBulkAssignAgentId("");
+              if (value !== "assigned") {
+                setSelectedAssignedAgentId("");
               }
+            }}
+            onSelectedAssignedAgentIdChange={(value) => {
+              setPage(1);
+              setSelectedAssignedAgentId(value);
+            }}
+            onSearchChange={(value) => {
+              setPage(1);
+              setSearch(value);
+            }}
+            onToggleShowForm={() => setShowForm((v) => !v)}
+            onRefresh={handleRefresh}
+            onFilterTypeChange={(value) => {
+              setPage(1);
+              setFilterType(value);
+            }}
+            onFilterStatusChange={(value) => {
+              setPage(1);
+              setFilterStatus(value);
+            }}
+            onFilterSourceChange={(value) => {
+              setPage(1);
+              setFilterSource(value);
+            }}
+            onOnlyWithPhoneChange={(value) => {
+              setPage(1);
+              setOnlyWithPhone(value);
+            }}
+            onFilterHealthChange={(value) => {
+              setPage(1);
+              setFilterHealth(value);
+            }}
+            onSortFieldChange={(value) => {
+              setPage(1);
+              setSortField(value);
+            }}
+            onSortDirectionChange={(value) => {
+              setPage(1);
+              setSortDirection(value);
+            }}
+            onToggleVisibleColumn={handleToggleVisibleColumn}
+            onResetFilters={handleResetFilters}
+          />
 
-              return Array.from(new Set([...prev, ...pageIds]));
-            });
-          }}
-          onBulkAssignAgentIdChange={setBulkAssignAgentId}
-          onBulkAssign={() =>
-            assignContactsBulk(selectedContactIds, bulkAssignAgentId)
-          }
-          onToggleExpandedNote={(contactId) =>
-            setExpandedNoteContactId((prev) =>
-              prev === contactId ? null : contactId
-            )
-          }
-          onViewActivities={(contactId) => router.push(`/contacts/${contactId}`)}
-          onOpenWhatsappTemplate={(contact) =>
-            tryOpenTemplateModal(contact, "whatsapp")
-          }
-          onOpenEmailTemplate={(contact) =>
-            tryOpenTemplateModal(contact, "email")
-          }
-          onAssignContact={assignContact}
-          getAgentName={getAgentName}
-          onNoteDraftChange={(contactId, value) =>
-            setNoteDrafts((prev) => ({
-              ...prev,
-              [contactId]: value,
-            }))
-          }
-          onNoteTypeDraftChange={(contactId, value) =>
-            setNoteTypeDrafts((prev) => ({
-              ...prev,
-              [contactId]: value,
-            }))
-          }
-          onSaveQuickNote={saveQuickNote}
-          onCancelQuickNote={(contactId) => {
-            setExpandedNoteContactId(null);
-            setNoteDrafts((prev) => ({
-              ...prev,
-              [contactId]: "",
-            }));
-            setNoteTypeDrafts((prev) => ({
-              ...prev,
-              [contactId]: DEFAULT_QUICK_ACTIVITY_TYPE,
-            }));
-          }}
-          onPrevPage={() => setPage((p) => Math.max(1, p - 1))}
-          onNextPage={() => setPage((p) => Math.min(totalPages, p + 1))}
-        />
-      </div>
+          <CreateContactForm
+            show={showForm}
+            firstName={firstName}
+            lastName={lastName}
+            phone={phone}
+            city={city}
+            contactType={contactType}
+            leadStatus={leadStatus}
+            source={source}
+            onFirstNameChange={setFirstName}
+            onLastNameChange={setLastName}
+            onPhoneChange={setPhone}
+            onCityChange={setCity}
+            onContactTypeChange={setContactType}
+            onLeadStatusChange={setLeadStatus}
+            onSourceChange={setSource}
+            onSave={createContact}
+            onCancel={() => setShowForm(false)}
+          />
+
+          {errorMsg && (
+            <div
+              style={{
+                background: "#ffecec",
+                border: "1px solid #ffb3b3",
+                padding: 12,
+                borderRadius: 10,
+                marginBottom: 14,
+              }}
+            >
+              <b>Errore:</b> {errorMsg}
+            </div>
+          )}
+
+          <ContactsTable
+            contacts={contacts}
+            loading={loading}
+            total={total}
+            page={page}
+            totalPages={totalPages}
+            loadingTemplates={loadingTemplates}
+            isAdminLike={isAdminLike}
+            agents={agents}
+            recentActivities={recentActivities}
+            visibleColumns={visibleColumns}
+            expandedNoteContactId={expandedNoteContactId}
+            noteDrafts={noteDrafts}
+            noteTypeDrafts={noteTypeDrafts}
+            savingNoteId={savingNoteId}
+            assignmentLoadingId={assignmentLoadingId}
+            selectedContactIds={selectedContactIds}
+            bulkAssignAgentId={bulkAssignAgentId}
+            bulkAssignLoading={bulkAssignLoading}
+            onToggleSelectedContact={(contactId) => {
+              setSelectedContactIds((prev) =>
+                prev.includes(contactId)
+                  ? prev.filter((id) => id !== contactId)
+                  : [...prev, contactId]
+              );
+            }}
+            onToggleSelectAllCurrentPage={() => {
+              const pageIds = contacts.map((contact) => contact.id);
+              const areAllSelected =
+                pageIds.length > 0 &&
+                pageIds.every((id) => selectedContactIds.includes(id));
+
+              setSelectedContactIds((prev) => {
+                if (areAllSelected) {
+                  return prev.filter((id) => !pageIds.includes(id));
+                }
+
+                return Array.from(new Set([...prev, ...pageIds]));
+              });
+            }}
+            onBulkAssignAgentIdChange={setBulkAssignAgentId}
+            onBulkAssign={() =>
+              assignContactsBulk(selectedContactIds, bulkAssignAgentId)
+            }
+            onToggleExpandedNote={(contactId) =>
+              setExpandedNoteContactId((prev) =>
+                prev === contactId ? null : contactId
+              )
+            }
+            onViewActivities={(contactId) => router.push(`/contacts/${contactId}`)}
+            onOpenWhatsappTemplate={(contact) =>
+              tryOpenTemplateModal(contact, "whatsapp")
+            }
+            onOpenEmailTemplate={(contact) =>
+              tryOpenTemplateModal(contact, "email")
+            }
+            onAssignContact={assignContact}
+            getAgentName={getAgentName}
+            onNoteDraftChange={(contactId, value) =>
+              setNoteDrafts((prev) => ({
+                ...prev,
+                [contactId]: value,
+              }))
+            }
+            onNoteTypeDraftChange={(contactId, value) =>
+              setNoteTypeDrafts((prev) => ({
+                ...prev,
+                [contactId]: value,
+              }))
+            }
+            onSaveQuickNote={saveQuickNote}
+            onCancelQuickNote={(contactId) => {
+              setExpandedNoteContactId(null);
+              setNoteDrafts((prev) => ({
+                ...prev,
+                [contactId]: "",
+              }));
+              setNoteTypeDrafts((prev) => ({
+                ...prev,
+                [contactId]: DEFAULT_QUICK_ACTIVITY_TYPE,
+              }));
+            }}
+            onPrevPage={() => setPage((p) => Math.max(1, p - 1))}
+            onNextPage={() => setPage((p) => Math.min(totalPages, p + 1))}
+          />
+        </div>
+      </main>
 
       <TemplateModal
         open={templateModalOpen}
@@ -1319,6 +1329,6 @@ export default function Home() {
         onSelectedTemplateIdChange={setSelectedTemplateId}
         onConfirm={handleSendFromTemplate}
       />
-    </main>
+    </>
   );
 }

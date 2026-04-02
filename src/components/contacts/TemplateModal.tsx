@@ -36,11 +36,11 @@ export default function TemplateModal({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.35)",
+        background: "rgba(0,0,0,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 20,
+        padding: 16,
         zIndex: 1000,
       }}
     >
@@ -48,18 +48,23 @@ export default function TemplateModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
-          maxWidth: 760,
+          maxWidth: 720,
+          maxHeight: "90vh",
           background: "#fff",
           borderRadius: 16,
           border: "1px solid #ddd",
+          display: "flex",
+          flexDirection: "column",
           overflow: "hidden",
         }}
       >
+        {/* HEADER */}
         <div
           style={{
             padding: 16,
             borderBottom: "1px solid #eee",
             background: "#fafafa",
+            flex: "0 0 auto",
           }}
         >
           <div style={{ fontWeight: 700, fontSize: 18 }}>
@@ -77,7 +82,16 @@ export default function TemplateModal({
           </div>
         </div>
 
-        <div style={{ padding: 16, display: "grid", gap: 14 }}>
+        {/* BODY SCROLLABILE */}
+        <div
+          style={{
+            padding: 16,
+            overflowY: "auto",
+            display: "grid",
+            gap: 14,
+            flex: 1,
+          }}
+        >
           <div>
             <div style={{ fontSize: 14, marginBottom: 6 }}>Template</div>
 
@@ -140,55 +154,53 @@ export default function TemplateModal({
               </div>
             </div>
           )}
+        </div>
 
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <button
-              onClick={onClose}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#fff",
-                cursor: "pointer",
-              }}
-            >
-              Annulla
-            </button>
+        {/* FOOTER FISSO */}
+        <div
+          style={{
+            padding: 14,
+            borderTop: "1px solid #eee",
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            background: "#fff",
+            flex: "0 0 auto",
+          }}
+        >
+          <button
+            onClick={onClose}
+            className="crm-button-secondary"
+          >
+            Annulla
+          </button>
 
-            <button
-              onClick={onConfirm}
-              disabled={
+          <button
+            onClick={onConfirm}
+            disabled={
+              actionLoading ||
+              !selectedTemplateId ||
+              availableTemplates.length === 0
+            }
+            className="crm-button-secondary"
+            style={{
+              background: "#111",
+              color: "#fff",
+              border: "1px solid #111",
+              opacity:
                 actionLoading ||
                 !selectedTemplateId ||
                 availableTemplates.length === 0
-              }
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #111",
-                background: "#111",
-                color: "#fff",
-                cursor:
-                  actionLoading ||
-                  !selectedTemplateId ||
-                  availableTemplates.length === 0
-                    ? "not-allowed"
-                    : "pointer",
-                opacity:
-                  actionLoading ||
-                  !selectedTemplateId ||
-                  availableTemplates.length === 0
-                    ? 0.7
-                    : 1,
-              }}
-            >
-              {actionLoading
-                ? "Preparazione..."
-                : type === "whatsapp"
-                ? "Apri WhatsApp"
-                : "Apri Gmail"}
-            </button>
-          </div>
+                  ? 0.7
+                  : 1,
+            }}
+          >
+            {actionLoading
+              ? "Preparazione..."
+              : type === "whatsapp"
+              ? "Apri WhatsApp"
+              : "Apri Gmail"}
+          </button>
         </div>
       </div>
     </div>

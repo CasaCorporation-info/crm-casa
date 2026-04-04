@@ -15,6 +15,13 @@ type Field = {
   input_options: string[];
 };
 
+type ValuationResult = {
+  min: number;
+  max: number;
+  media: number;
+  commento: string;
+};
+
 const ORGANIZATION_ID = "1573b4fa-eb4a-4fb2-9c7e-fba3ef58a580";
 
 function getSectionTitle(section: string) {
@@ -45,6 +52,91 @@ const SECTION_ORDER = [
   "notes",
 ];
 
+function formatBoolean(value: boolean) {
+  return value ? "Sì" : "No";
+}
+
+function normalizeAiValue(field: Field, rawValue: any) {
+  if (rawValue === null || rawValue === undefined) return null;
+
+  if (field.input_type === "boolean") {
+    return formatBoolean(!!rawValue);
+  }
+
+  if (typeof rawValue === "string") {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return null;
+    return trimmed;
+  }
+
+  if (typeof rawValue === "number") {
+    return Number.isFinite(rawValue) ? rawValue : null;
+  }
+
+  return rawValue;
+}
+
+function buildAiPayload(fields: Field[], form: Record<string, any>) {
+  const aiSections: Record<string, Record<string, any>> = {};
+
+  for (const field of fields) {
+    const rawValue = form[field.field_key];
+    const normalizedValue = normalizeAiValue(field, rawValue);
+
+    if (normalizedValue === null) continue;
+
+    const sectionTitle = getSectionTitle(field.section_key);
+
+    if (!aiSections[sectionTitle]) {
+      aiSections[sectionTitle] = {};
+    }
+
+    aiSections[sectionTitle][field.field_label] = normalizedValue;
+  }
+
+  const comune =
+    form.comune ||
+    form.citta ||
+    form.city ||
+    form.comune_immobile ||
+    form.comune_appartenenza ||
+    null;
+
+  const zona =
+    form.zona ||
+    form.zona_immobile ||
+    form.quartiere ||
+    form.area ||
+    null;
+
+  const microzona =
+    form.microzona ||
+    form.micro_zona ||
+    form.sottozona ||
+    form.localita ||
+    null;
+
+  const indirizzo =
+    form.indirizzo_immobile ||
+    form.indirizzo ||
+    form.via ||
+    null;
+
+  const civico = form.civico || form.numero_civico || null;
+
+  return {
+    organization_id: ORGANIZATION_ID,
+    contesto_localizzazione: {
+      comune,
+      zona,
+      microzona,
+      indirizzo,
+      civico,
+    },
+    dati_immobiliari: aiSections,
+  };
+}
+
 export default function ValuatorForm() {
   const [fields, setFields] = useState<Field[]>([]);
   const [form, setForm] = useState<Record<string, any>>({});
@@ -56,6 +148,10 @@ export default function ValuatorForm() {
     pricing: false,
     notes: false,
   });
+
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<ValuationResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
   useEffect(() => {
     async function loadFields() {
@@ -112,22 +208,65 @@ export default function ValuatorForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    const { error } = await supabase.from("property_valuations").insert({
-      organization_id: ORGANIZATION_ID,
-      contact_name: form.nominativo_venditori,
-      phone: form.recapito_telefonico,
-      email: form.email,
-      property_address: form.indirizzo_immobile,
-      property_data: form,
-      status: "draft",
-    });
+    setLoading(true);
+    setErrorMessage("");
+    setResult(null);
 
-    if (error) {
-      alert("Errore salvataggio");
-      return;
+    try {
+      const { error: saveError } = await supabase
+        .from("property_valuations")
+        .insert({
+          organization_id: ORGANIZATION_ID,
+          contact_name: form.nominativo_venditori || null,
+          phone: form.recapito_telefonico || null,
+          email: form.email || null,
+          property_address: form.indirizzo_immobile || null,
+          property_data: form,
+          status: "draft",
+        });
+
+      if (saveError) {
+        throw new Error("Errore salvataggio su Supabase");
+      }
+
+      const aiPayload = buildAiPayload(fields, form);
+
+      const response = await fetch("/api/valuator/chatgpt", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(aiPayload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Errore nella generazione della valutazione");
+      }
+
+      if (
+        typeof data?.min !== "number" ||
+        typeof data?.max !== "number" ||
+        typeof data?.media !== "number" ||
+        typeof data?.commento !== "string"
+      ) {
+        throw new Error("Risposta API non valida");
+      }
+
+      setResult({
+        min: data.min,
+        max: data.max,
+        media: data.media,
+        commento: data.commento,
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Errore imprevisto"
+      );
+    } finally {
+      setLoading(false);
     }
-
-    alert("Valutazione salvata");
   }
 
   function renderField(field: Field) {
@@ -140,6 +279,7 @@ export default function ValuatorForm() {
             name={field.field_key}
             value={value}
             onChange={handleChange}
+            required={field.is_required}
             rows={4}
             style={{
               width: "100%",
@@ -157,6 +297,7 @@ export default function ValuatorForm() {
             name={field.field_key}
             value={value}
             onChange={handleChange}
+            required={field.is_required}
             style={{
               width: "100%",
               padding: "10px 12px",
@@ -172,6 +313,7 @@ export default function ValuatorForm() {
             name={field.field_key}
             value={value}
             onChange={handleChange}
+            required={field.is_required}
             style={{
               width: "100%",
               padding: "10px 12px",
@@ -225,6 +367,7 @@ export default function ValuatorForm() {
             name={field.field_key}
             value={value}
             onChange={handleChange}
+            required={field.is_required}
             style={{
               width: "100%",
               padding: "10px 12px",
@@ -254,76 +397,214 @@ export default function ValuatorForm() {
   );
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      style={{ display: "grid", gap: "16px", maxWidth: "900px" }}
-    >
-      {visibleSections.map((sectionKey) => {
-        const sectionFields = grouped[sectionKey];
-        const isOpen = !!openSections[sectionKey];
+    <div style={{ display: "grid", gap: "20px", maxWidth: "900px" }}>
+      <form onSubmit={handleSubmit} style={{ display: "grid", gap: "16px" }}>
+        {visibleSections.map((sectionKey) => {
+          const sectionFields = grouped[sectionKey];
+          const isOpen = !!openSections[sectionKey];
 
-        return (
-          <div
-            key={sectionKey}
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: "14px",
-              overflow: "hidden",
-              background: "#fff",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => toggleSection(sectionKey)}
+          return (
+            <div
+              key={sectionKey}
               style={{
-                width: "100%",
-                padding: "16px",
-                border: "none",
-                background: "#f8f8f8",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                fontSize: "18px",
-                fontWeight: 700,
-                textAlign: "left",
+                border: "1px solid #ddd",
+                borderRadius: "14px",
+                overflow: "hidden",
+                background: "#fff",
               }}
             >
-              <span>{getSectionTitle(sectionKey)}</span>
-              <span style={{ fontSize: "20px" }}>{isOpen ? "−" : "+"}</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => toggleSection(sectionKey)}
+                style={{
+                  width: "100%",
+                  padding: "16px",
+                  border: "none",
+                  background: "#f8f8f8",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontSize: "18px",
+                  fontWeight: 700,
+                  textAlign: "left",
+                }}
+              >
+                <span>{getSectionTitle(sectionKey)}</span>
+                <span style={{ fontSize: "20px" }}>{isOpen ? "−" : "+"}</span>
+              </button>
 
-            {isOpen && (
-              <div style={{ padding: "16px", display: "grid", gap: "14px" }}>
-                {sectionFields.map((field) => (
-                  <div key={field.id} style={{ display: "grid", gap: "6px" }}>
-                    <label style={{ fontWeight: 600 }}>
-                      {field.field_label}
-                      {field.is_required ? " *" : ""}
-                    </label>
-                    {renderField(field)}
-                  </div>
-                ))}
+              {isOpen && (
+                <div style={{ padding: "16px", display: "grid", gap: "14px" }}>
+                  {sectionFields.map((field) => (
+                    <div key={field.id} style={{ display: "grid", gap: "6px" }}>
+                      <label style={{ fontWeight: 600 }}>
+                        {field.field_label}
+                        {field.is_required ? " *" : ""}
+                      </label>
+                      {renderField(field)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            padding: "14px 18px",
+            borderRadius: "12px",
+            border: "none",
+            background: loading ? "#666" : "#111",
+            color: "#fff",
+            fontWeight: 700,
+            cursor: loading ? "not-allowed" : "pointer",
+            opacity: loading ? 0.8 : 1,
+          }}
+        >
+          {loading ? "Generazione in corso..." : "Genera valutazione"}
+        </button>
+      </form>
+
+      {errorMessage && (
+        <div
+          style={{
+            padding: "14px 16px",
+            borderRadius: "12px",
+            background: "#fee2e2",
+            color: "#991b1b",
+            border: "1px solid #fecaca",
+            fontWeight: 600,
+          }}
+        >
+          {errorMessage}
+        </div>
+      )}
+
+      {result && (
+        <div
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: "16px",
+            background: "#fff",
+            padding: "20px",
+            display: "grid",
+            gap: "16px",
+          }}
+        >
+          <h3
+            style={{
+              margin: 0,
+              fontSize: "22px",
+              fontWeight: 800,
+            }}
+          >
+            Valutazione stimata
+          </h3>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                padding: "14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#6b7280",
+                  marginBottom: "6px",
+                }}
+              >
+                Valore minimo
               </div>
-            )}
-          </div>
-        );
-      })}
+              <div style={{ fontSize: "24px", fontWeight: 800 }}>
+                € {result.min.toLocaleString("it-IT")}
+              </div>
+            </div>
 
-      <button
-        type="submit"
-        style={{
-          padding: "14px 18px",
-          borderRadius: "12px",
-          border: "none",
-          background: "#111",
-          color: "#fff",
-          fontWeight: 700,
-          cursor: "pointer",
-        }}
-      >
-        Genera valutazione
-      </button>
-    </form>
+            <div
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                padding: "14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#6b7280",
+                  marginBottom: "6px",
+                }}
+              >
+                Valore medio
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 800 }}>
+                € {result.media.toLocaleString("it-IT")}
+              </div>
+            </div>
+
+            <div
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                padding: "14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#6b7280",
+                  marginBottom: "6px",
+                }}
+              >
+                Valore massimo
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 800 }}>
+                € {result.max.toLocaleString("it-IT")}
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#f9fafb",
+              border: "1px solid #e5e7eb",
+              borderRadius: "12px",
+              padding: "16px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "13px",
+                color: "#6b7280",
+                marginBottom: "8px",
+                fontWeight: 700,
+              }}
+            >
+              Commento professionale
+            </div>
+            <div
+              style={{
+                whiteSpace: "pre-line",
+                lineHeight: 1.5,
+              }}
+            >
+              {result.commento}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,5 +1,45 @@
 import { NextResponse } from "next/server";
 
+type OpenAiValuation = {
+  min: number;
+  max: number;
+  media: number;
+  commento: string;
+};
+
+function extractJson(text: string) {
+  const cleaned = text.trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // continua
+  }
+
+  const match = cleaned.match(/\{[\s\S]*\}/);
+
+  if (!match) {
+    throw new Error("JSON non trovato nella risposta OpenAI");
+  }
+
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    throw new Error("JSON non valido nella risposta OpenAI");
+  }
+}
+
+function isValidValuation(data: any): data is OpenAiValuation {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    typeof data.min === "number" &&
+    typeof data.max === "number" &&
+    typeof data.media === "number" &&
+    typeof data.commento === "string"
+  );
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -15,23 +55,55 @@ export async function POST(req: Request) {
     }
 
     const userPrompt = `
-Analizza questi dati immobiliari:
+Sei un valutatore immobiliare italiano esperto.
 
+Obiettivo:
+stimare il più realistico VALORE DI MERCATO di compravendita dell'immobile, cioè il prezzo a cui può essere realmente venduto in condizioni normali di mercato, non il prezzo di richiesta ideale e non una stima teorica astratta.
+
+PRIORITÀ ASSOLUTA:
+1. Comune
+2. Zona / quartiere
+3. Microzona, via, indirizzo, civico se presenti
+
+Regole obbligatorie:
+- La localizzazione pesa moltissimo nella stima.
+- Se sono presenti comune e zona, usali come fattore principale della valutazione.
+- Se è presente anche indirizzo o civico, usali per affinare il giudizio, senza inventare dati non forniti.
+- Dai poi peso a: metratura, tipologia, stato immobile, piano, ascensore, sfoghi esterni, box/posto auto, stato stabile, esposizione, luminosità, pertinenze e criticità.
+- Non essere eccessivamente prudente solo perché mancano alcuni dati.
+- Non fare una stima artificiosamente bassa.
+- Se l'immobile ha elementi di pregio, valorizzali.
+- Se ha problemi, penalizzalo in modo realistico ma non distruttivo, salvo gravi criticità.
+- Ragiona come un agente immobiliare esperto della zona.
+- Non usare formule vaghe o generiche: produci una forchetta credibile.
+
+Dati ricevuti:
 ${JSON.stringify(body, null, 2)}
 
-Fornisci:
-1) Valore minimo realistico
-2) Valore massimo realistico
-3) Valore medio stimato
-4) Commento professionale sintetico (max 10 righe)
+Devi restituire SOLO JSON valido, senza testo extra, senza markdown, senza backticks.
 
-Rispondi SOLO in JSON così:
+Formato obbligatorio:
 {
   "min": number,
   "max": number,
   "media": number,
   "commento": string
 }
+
+Vincoli numerici:
+- min = valore minimo realistico di vendita
+- max = valore massimo realistico di vendita
+- media = valore centrale realistico
+- media deve stare tra min e max
+- max deve essere strettamente maggiore di min
+- usa numeri interi senza simboli
+
+Vincoli commento:
+- massimo 8 righe
+- commento sintetico ma professionale
+- indica in modo concreto quali fattori incidono sul valore
+- cita la localizzazione se presente
+- se mancano dati rilevanti, dillo brevemente
 `;
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -42,12 +114,12 @@ Rispondi SOLO in JSON così:
       },
       body: JSON.stringify({
         model,
-        temperature: 0.2,
+        temperature: 0.15,
         messages: [
           {
             role: "system",
             content:
-              "Sei un esperto valutatore immobiliare italiano. Le tue stime devono essere realistiche, prudenti e basate su logica di mercato.",
+              "Sei un esperto valutatore immobiliare italiano. Devi rispondere solo con JSON valido. Nessun testo fuori dal JSON.",
           },
           {
             role: "user",
@@ -66,19 +138,49 @@ Rispondi SOLO in JSON così:
       );
     }
 
-    const content = data.choices?.[0]?.message?.content;
+    const content = data?.choices?.[0]?.message?.content;
 
-    if (!content) {
+    if (!content || typeof content !== "string") {
       return NextResponse.json(
         { error: "Risposta vuota da OpenAI" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ result: content });
+    const parsed = extractJson(content);
+
+    if (!isValidValuation(parsed)) {
+      return NextResponse.json(
+        { error: "Formato JSON OpenAI non valido", raw: content },
+        { status: 500 }
+      );
+    }
+
+    if (parsed.max <= parsed.min) {
+      return NextResponse.json(
+        { error: "Valori non coerenti restituiti dal modello" },
+        { status: 500 }
+      );
+    }
+
+    if (parsed.media < parsed.min || parsed.media > parsed.max) {
+      return NextResponse.json(
+        { error: "Media fuori range restituita dal modello" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      min: Math.round(parsed.min),
+      max: Math.round(parsed.max),
+      media: Math.round(parsed.media),
+      commento: parsed.commento.trim(),
+    });
   } catch (err) {
     return NextResponse.json(
-      { error: "Errore server" },
+      {
+        error: err instanceof Error ? err.message : "Errore server",
+      },
       { status: 500 }
     );
   }

@@ -5,6 +5,9 @@ type OpenAiValuation = {
   max: number;
   media: number;
   commento: string;
+  zonaOmi?: string | null;
+  omiMin?: string | null;
+  omiMax?: string | null;
 };
 
 function extractJson(text: string) {
@@ -17,7 +20,6 @@ function extractJson(text: string) {
   }
 
   const match = cleaned.match(/\{[\s\S]*\}/);
-
   if (!match) {
     throw new Error("JSON non trovato nella risposta OpenAI");
   }
@@ -40,6 +42,10 @@ function isValidValuation(data: any): data is OpenAiValuation {
   );
 }
 
+function safeString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -54,11 +60,18 @@ export async function POST(req: Request) {
       );
     }
 
+    const zonaInput =
+      body?.contesto_localizzazione?.zona ||
+      body?.contesto_localizzazione?.microzona ||
+      body?.contesto_localizzazione?.indirizzo ||
+      "";
+
     const userPrompt = `
 Sei un valutatore immobiliare italiano esperto.
 
 Obiettivo:
-stimare il più realistico VALORE DI MERCATO di compravendita dell'immobile, cioè il prezzo a cui può essere realmente venduto in condizioni normali di mercato, non il prezzo di richiesta ideale e non una stima teorica astratta.
+stimare il più realistico VALORE DI MERCATO di compravendita dell'immobile,
+cioè il prezzo a cui può essere realmente venduto in condizioni normali di mercato.
 
 PRIORITÀ ASSOLUTA:
 1. Comune
@@ -75,7 +88,6 @@ Regole obbligatorie:
 - Se l'immobile ha elementi di pregio, valorizzali.
 - Se ha problemi, penalizzalo in modo realistico ma non distruttivo, salvo gravi criticità.
 - Ragiona come un agente immobiliare esperto della zona.
-- Non usare formule vaghe o generiche: produci una forchetta credibile.
 
 Dati ricevuti:
 ${JSON.stringify(body, null, 2)}
@@ -87,7 +99,10 @@ Formato obbligatorio:
   "min": number,
   "max": number,
   "media": number,
-  "commento": string
+  "commento": string,
+  "zonaOmi": string | null,
+  "omiMin": string | null,
+  "omiMax": string | null
 }
 
 Vincoli numerici:
@@ -104,6 +119,10 @@ Vincoli commento:
 - indica in modo concreto quali fattori incidono sul valore
 - cita la localizzazione se presente
 - se mancano dati rilevanti, dillo brevemente
+
+Vincoli OMI:
+- zonaOmi: se puoi ricavarla dai dati ricevuti, valorizzala; altrimenti usa null
+- omiMin e omiMax: se NON hai una base affidabile, usa null e non inventare
 `;
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -175,6 +194,9 @@ Vincoli commento:
       max: Math.round(parsed.max),
       media: Math.round(parsed.media),
       commento: parsed.commento.trim(),
+      zonaOmi: safeString(parsed.zonaOmi) || safeString(zonaInput) || null,
+      omiMin: safeString(parsed.omiMin) || null,
+      omiMax: safeString(parsed.omiMax) || null,
     });
   } catch (err) {
     return NextResponse.json(

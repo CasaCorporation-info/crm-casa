@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import ValuationPreview, {
+  type ValuationPreviewData,
+} from "@/components/valuator/ValuationPreview";
 
 type Field = {
   id: string;
@@ -20,9 +23,21 @@ type ValuationResult = {
   max: number;
   media: number;
   commento: string;
+  zonaOmi?: string | null;
+  omiMin?: string | null;
+  omiMax?: string | null;
 };
 
 const ORGANIZATION_ID = "1573b4fa-eb4a-4fb2-9c7e-fba3ef58a580";
+
+const COMPANY_INFO = {
+  name: "Casa Corporation",
+  tagline: "Valutazioni immobiliari professionali",
+  address: "Via Davide Campari 205/207, Roma",
+  phone: "",
+  email: "",
+  website: "",
+};
 
 function getSectionTitle(section: string) {
   switch (section) {
@@ -82,7 +97,6 @@ function buildAiPayload(fields: Field[], form: Record<string, any>) {
   for (const field of fields) {
     const rawValue = form[field.field_key];
     const normalizedValue = normalizeAiValue(field, rawValue);
-
     if (normalizedValue === null) continue;
 
     const sectionTitle = getSectionTitle(field.section_key);
@@ -103,11 +117,7 @@ function buildAiPayload(fields: Field[], form: Record<string, any>) {
     null;
 
   const zona =
-    form.zona ||
-    form.zona_immobile ||
-    form.quartiere ||
-    form.area ||
-    null;
+    form.zona || form.zona_immobile || form.quartiere || form.area || null;
 
   const microzona =
     form.microzona ||
@@ -117,10 +127,7 @@ function buildAiPayload(fields: Field[], form: Record<string, any>) {
     null;
 
   const indirizzo =
-    form.indirizzo_immobile ||
-    form.indirizzo ||
-    form.via ||
-    null;
+    form.indirizzo_immobile || form.indirizzo || form.via || null;
 
   const civico = form.civico || form.numero_civico || null;
 
@@ -137,6 +144,16 @@ function buildAiPayload(fields: Field[], form: Record<string, any>) {
   };
 }
 
+function calculateSuggestedPrice(media: number) {
+  if (!Number.isFinite(media) || media <= 0) return 0;
+  const base = Math.floor(media / 10000) * 10000;
+  return base + 9000;
+}
+
+function formatCurrency(value: number) {
+  return `€ ${value.toLocaleString("it-IT")}`;
+}
+
 export default function ValuatorForm() {
   const [fields, setFields] = useState<Field[]>([]);
   const [form, setForm] = useState<Record<string, any>>({});
@@ -148,9 +165,8 @@ export default function ValuatorForm() {
     pricing: false,
     notes: false,
   });
-
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ValuationResult | null>(null);
+  const [preview, setPreview] = useState<ValuationPreviewData | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   useEffect(() => {
@@ -164,7 +180,6 @@ export default function ValuatorForm() {
 
       if (data) {
         setFields(data);
-
         const initial: Record<string, any> = {};
         data.forEach((f) => {
           initial[f.field_key] = f.input_type === "boolean" ? false : "";
@@ -205,25 +220,72 @@ export default function ValuatorForm() {
     }));
   }
 
+  function buildPreviewFromResult(apiResult: ValuationResult) {
+    const zoneLabel =
+      apiResult.zonaOmi ||
+      form.zona ||
+      form.zona_immobile ||
+      form.quartiere ||
+      form.area ||
+      form.microzona ||
+      form.localita ||
+      "-";
+
+    return {
+      company: COMPANY_INFO,
+      pricing: {
+        min: apiResult.min,
+        media: apiResult.media,
+        max: apiResult.max,
+        suggested: calculateSuggestedPrice(apiResult.media),
+      },
+      assignment: {
+        duration: "",
+        commission: "",
+        tacitRenewal: "",
+      },
+      omi: {
+        zone: zoneLabel,
+        min: apiResult.omiMin || "",
+        max: apiResult.omiMax || "",
+      },
+      ai: {
+        comment: apiResult.commento,
+      },
+      toolsUsed: [
+        "Esperienza ventennale dei ns agenti",
+        "Chat GPT",
+        "GEMINI",
+        "OMI",
+        "Compravenduto reale di zona",
+        "Analisi professionale di mercato",
+        "Immobili in vendita",
+      ],
+      benefits: {
+        noExpenseRefund: true,
+        reviewsLabel: "Leggi le recensioni",
+        reviewsUrl: "/valutazioni",
+        advancedAiTools: true,
+      },
+    } satisfies ValuationPreviewData;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-
     setLoading(true);
     setErrorMessage("");
-    setResult(null);
+    setPreview(null);
 
     try {
-      const { error: saveError } = await supabase
-        .from("property_valuations")
-        .insert({
-          organization_id: ORGANIZATION_ID,
-          contact_name: form.nominativo_venditori || null,
-          phone: form.recapito_telefonico || null,
-          email: form.email || null,
-          property_address: form.indirizzo_immobile || null,
-          property_data: form,
-          status: "draft",
-        });
+      const { error: saveError } = await supabase.from("property_valuations").insert({
+        organization_id: ORGANIZATION_ID,
+        contact_name: form.nominativo_venditori || null,
+        phone: form.recapito_telefonico || null,
+        email: form.email || null,
+        property_address: form.indirizzo_immobile || null,
+        property_data: form,
+        status: "draft",
+      });
 
       if (saveError) {
         throw new Error("Errore salvataggio su Supabase");
@@ -254,12 +316,7 @@ export default function ValuatorForm() {
         throw new Error("Risposta API non valida");
       }
 
-      setResult({
-        min: data.min,
-        max: data.max,
-        media: data.media,
-        commento: data.commento,
-      });
+      setPreview(buildPreviewFromResult(data));
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Errore imprevisto"
@@ -381,14 +438,12 @@ export default function ValuatorForm() {
 
   const grouped = useMemo(() => {
     const map: Record<string, Field[]> = {};
-
     fields.forEach((field) => {
       if (!map[field.section_key]) {
         map[field.section_key] = [];
       }
       map[field.section_key].push(field);
     });
-
     return map;
   }, [fields]);
 
@@ -397,7 +452,7 @@ export default function ValuatorForm() {
   );
 
   return (
-    <div style={{ display: "grid", gap: "20px", maxWidth: "900px" }}>
+    <div style={{ display: "grid", gap: "24px", maxWidth: "1100px" }}>
       <form onSubmit={handleSubmit} style={{ display: "grid", gap: "16px" }}>
         {visibleSections.map((sectionKey) => {
           const sectionFields = grouped[sectionKey];
@@ -484,26 +539,55 @@ export default function ValuatorForm() {
         </div>
       )}
 
-      {result && (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: "16px",
-            background: "#fff",
-            padding: "20px",
-            display: "grid",
-            gap: "16px",
-          }}
-        >
-          <h3
+      {preview && (
+        <div style={{ display: "grid", gap: "16px" }}>
+          <div
             style={{
-              margin: 0,
-              fontSize: "22px",
-              fontWeight: 800,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+              flexWrap: "wrap",
             }}
           >
-            Valutazione stimata
-          </h3>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "24px",
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              Preview valutazione
+            </h3>
+
+            <div
+              style={{
+                fontSize: "13px",
+                color: "#64748b",
+                fontWeight: 700,
+              }}
+            >
+              X = modificabile • XX = manuale
+            </div>
+          </div>
+
+          <ValuationPreview data={preview} onChange={setPreview} />
+
+          <div
+            style={{
+              border: "1px dashed #cbd5e1",
+              borderRadius: "16px",
+              padding: "16px",
+              background: "#fff",
+              color: "#475569",
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Step successivo:</strong> da qui colleghiamo il bottone
+            “Crea PDF”, poi upload su Supabase Storage e match automatico sul
+            contatto tramite numero di telefono.
+          </div>
 
           <div
             style={{
@@ -517,19 +601,14 @@ export default function ValuatorForm() {
                 border: "1px solid #e5e7eb",
                 borderRadius: "12px",
                 padding: "14px",
+                background: "#fff",
               }}
             >
-              <div
-                style={{
-                  fontSize: "13px",
-                  color: "#6b7280",
-                  marginBottom: "6px",
-                }}
-              >
-                Valore minimo
+              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>
+                Prezzo minimo
               </div>
-              <div style={{ fontSize: "24px", fontWeight: 800 }}>
-                € {result.min.toLocaleString("it-IT")}
+              <div style={{ fontSize: "22px", fontWeight: 800 }}>
+                {formatCurrency(preview.pricing.min)}
               </div>
             </div>
 
@@ -538,19 +617,14 @@ export default function ValuatorForm() {
                 border: "1px solid #e5e7eb",
                 borderRadius: "12px",
                 padding: "14px",
+                background: "#fff",
               }}
             >
-              <div
-                style={{
-                  fontSize: "13px",
-                  color: "#6b7280",
-                  marginBottom: "6px",
-                }}
-              >
-                Valore medio
+              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>
+                Prezzo medio
               </div>
-              <div style={{ fontSize: "24px", fontWeight: 800 }}>
-                € {result.media.toLocaleString("it-IT")}
+              <div style={{ fontSize: "22px", fontWeight: 800 }}>
+                {formatCurrency(preview.pricing.media)}
               </div>
             </div>
 
@@ -559,48 +633,31 @@ export default function ValuatorForm() {
                 border: "1px solid #e5e7eb",
                 borderRadius: "12px",
                 padding: "14px",
+                background: "#fff",
               }}
             >
-              <div
-                style={{
-                  fontSize: "13px",
-                  color: "#6b7280",
-                  marginBottom: "6px",
-                }}
-              >
-                Valore massimo
+              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>
+                Prezzo massimo
               </div>
-              <div style={{ fontSize: "24px", fontWeight: 800 }}>
-                € {result.max.toLocaleString("it-IT")}
+              <div style={{ fontSize: "22px", fontWeight: 800 }}>
+                {formatCurrency(preview.pricing.max)}
               </div>
             </div>
-          </div>
 
-          <div
-            style={{
-              background: "#f9fafb",
-              border: "1px solid #e5e7eb",
-              borderRadius: "12px",
-              padding: "16px",
-            }}
-          >
             <div
               style={{
-                fontSize: "13px",
-                color: "#6b7280",
-                marginBottom: "8px",
-                fontWeight: 700,
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                padding: "14px",
+                background: "#fff",
               }}
             >
-              Commento professionale
-            </div>
-            <div
-              style={{
-                whiteSpace: "pre-line",
-                lineHeight: 1.5,
-              }}
-            >
-              {result.commento}
+              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>
+                Prezzo consigliato
+              </div>
+              <div style={{ fontSize: "22px", fontWeight: 800 }}>
+                {formatCurrency(preview.pricing.suggested)}
+              </div>
             </div>
           </div>
         </div>

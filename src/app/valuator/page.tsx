@@ -39,26 +39,56 @@ export default function ValuatorPage() {
 
   return (
     <main style={{ padding: "24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <h1 style={{ fontSize: "28px", fontWeight: 700 }}>
-          Valutatore immobiliare
-        </h1>
+      <div
+        style={{
+          display: "grid",
+          gap: "10px",
+          marginBottom: "20px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "12px",
+            flexWrap: "wrap",
+          }}
+        >
+          <h1 style={{ fontSize: "28px", fontWeight: 800, margin: 0 }}>
+            Valutatore immobiliare
+          </h1>
 
-        {!loading && profile?.role === "admin" && (
-          <a
-            href="/admin/valuator-fields"
-            style={{
-              padding: "10px 14px",
-              borderRadius: "8px",
-              background: "#111",
-              color: "#fff",
-              textDecoration: "none",
-              fontSize: "14px",
-            }}
-          >
-            Gestione campi
-          </a>
-        )}
+          {!loading && profile?.role === "admin" && (
+            <a
+              href="/admin/valuator-fields"
+              style={{
+                padding: "10px 14px",
+                borderRadius: "10px",
+                background: "#111",
+                color: "#fff",
+                textDecoration: "none",
+                fontSize: "14px",
+                fontWeight: 700,
+              }}
+            >
+              Gestione campi
+            </a>
+          )}
+        </div>
+
+        <div
+          style={{
+            color: "#64748b",
+            fontSize: "14px",
+            lineHeight: 1.5,
+            maxWidth: "900px",
+          }}
+        >
+          Flusso attuale: compilazione dati → generazione valutazione →
+          preview editabile professionale. Il PDF e il salvataggio finale
+          verranno collegati nello step successivo.
+        </div>
       </div>
 
       <ValuatorForm />

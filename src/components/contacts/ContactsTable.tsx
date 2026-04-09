@@ -35,6 +35,9 @@ type Props = {
   selectedContactIds: string[];
   bulkAssignAgentId: string;
   bulkAssignLoading: boolean;
+  verifiedWhatsappContactIds: string[];
+  whatsappSentContactIds: string[];
+  replyLoadingContactId: string | null;
   onToggleSelectedContact: (contactId: string) => void;
   onToggleSelectAllCurrentPage: () => void;
   onBulkAssignAgentIdChange: (value: string) => void;
@@ -43,6 +46,7 @@ type Props = {
   onViewActivities: (contactId: string) => void;
   onOpenWhatsappTemplate: (contact: Contact) => void;
   onOpenEmailTemplate: (contact: Contact) => void;
+  onMarkWhatsappReplyReceived: (contact: Contact) => void;
   onAssignContact: (contactId: string, agentId: string) => void;
   getAgentName: (agentId: string | null) => string;
   onNoteDraftChange: (contactId: string, value: string) => void;
@@ -72,6 +76,9 @@ export default function ContactsTable(props: Props) {
     selectedContactIds,
     bulkAssignAgentId,
     bulkAssignLoading,
+    verifiedWhatsappContactIds,
+    whatsappSentContactIds,
+    replyLoadingContactId,
     onToggleSelectedContact,
     onToggleSelectAllCurrentPage,
     onBulkAssignAgentIdChange,
@@ -80,6 +87,7 @@ export default function ContactsTable(props: Props) {
     onViewActivities,
     onOpenWhatsappTemplate,
     onOpenEmailTemplate,
+    onMarkWhatsappReplyReceived,
     onAssignContact,
     onNoteDraftChange,
     onNoteTypeDraftChange,
@@ -220,6 +228,8 @@ export default function ContactsTable(props: Props) {
               const healthColor = getContactHealthColor(health);
               const healthLabel = getContactHealthLabel(health);
               const isExpanded = expandedNoteContactId === c.id;
+              const isWhatsappVerified = verifiedWhatsappContactIds.includes(c.id);
+              const canMarkReplyReceived = whatsappSentContactIds.includes(c.id);
 
               return (
                 <React.Fragment key={c.id}>
@@ -259,9 +269,30 @@ export default function ContactsTable(props: Props) {
                         <span
                           style={{
                             whiteSpace: "nowrap",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
                           }}
                         >
-                          {getFullName(c)}
+                          <span>{getFullName(c)}</span>
+
+                          {isWhatsappVerified && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                lineHeight: 1,
+                                padding: "4px 6px",
+                                borderRadius: 999,
+                                background: "#ecfdf3",
+                                border: "1px solid #86efac",
+                                color: "#166534",
+                                fontWeight: 700,
+                              }}
+                              title="WhatsApp verificato"
+                            >
+                              WhatsApp verificato ✅
+                            </span>
+                          )}
                         </span>
                       </a>
                     </td>
@@ -329,6 +360,34 @@ export default function ContactsTable(props: Props) {
                         >
                           Mail
                         </button>
+
+                        {canMarkReplyReceived && (
+                          <button
+                            onClick={() => onMarkWhatsappReplyReceived(c)}
+                            disabled={replyLoadingContactId === c.id}
+                            className="crm-button-secondary"
+                            style={{
+                              ...miniButtonStyle,
+                              background:
+                                replyLoadingContactId === c.id
+                                  ? "#e2e8f0"
+                                  : "#ecfdf3",
+                              color:
+                                replyLoadingContactId === c.id
+                                  ? "#475569"
+                                  : "#166534",
+                              border:
+                                replyLoadingContactId === c.id
+                                  ? "1px solid #cbd5e1"
+                                  : "1px solid #86efac",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {replyLoadingContactId === c.id
+                              ? "Salvataggio..."
+                              : "Risposta ricevuta"}
+                          </button>
+                        )}
                       </div>
                     </td>
 

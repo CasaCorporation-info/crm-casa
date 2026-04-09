@@ -43,6 +43,21 @@ const DEFAULT_VISIBLE_COLUMNS: VisibleColumnsState = {
 
 const DEFAULT_QUICK_ACTIVITY_TYPE: QuickActivityUiType = "Note";
 
+type WhatsappOutcome =
+  | "sent"
+  | "not_sent"
+  | "no_whatsapp"
+  | "error"
+  | "invalid_number";
+
+type PendingWhatsappSend = {
+  contact: Contact;
+  template: MessageTemplate;
+  finalMessage: string;
+  targetUrl: string | null;
+  metadata: Record<string, unknown>;
+};
+
 export default function Home() {
   const router = useRouter();
   const auth = useAuthContext();
@@ -120,6 +135,19 @@ export default function Home() {
   );
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+
+  const [pendingWhatsappSend, setPendingWhatsappSend] =
+    useState<PendingWhatsappSend | null>(null);
+  const [whatsappOutcomeLoading, setWhatsappOutcomeLoading] = useState(false);
+  const [verifiedWhatsappContactIds, setVerifiedWhatsappContactIds] = useState<
+    string[]
+  >([]);
+  const [whatsappSentContactIds, setWhatsappSentContactIds] = useState<string[]>(
+    []
+  );
+  const [replyLoadingContactId, setReplyLoadingContactId] = useState<
+    string | null
+  >(null);
 
   const normalizedRole = String(currentUserRole || "").trim().toLowerCase();
   const isAdminLike =
@@ -225,6 +253,7 @@ export default function Home() {
   async function loadRecentActivitiesForContacts(nextContacts: Contact[]) {
     if (!nextContacts.length) {
       setRecentActivities({});
+      setWhatsappSentContactIds([]);
       return;
     }
 
@@ -241,10 +270,12 @@ export default function Home() {
 
     if (error) {
       setRecentActivities({});
+      setWhatsappSentContactIds([]);
       return;
     }
 
     const map: RecentActivityMap = {};
+    const sentIds = new Set<string>();
 
     for (const contact of nextContacts) {
       map[contact.id] = {
@@ -273,6 +304,10 @@ export default function Home() {
         typeof metadata.template_title === "string"
           ? metadata.template_title
           : null;
+      const direction =
+        typeof metadata.direction === "string" ? metadata.direction : null;
+      const outcome =
+        typeof metadata.outcome === "string" ? metadata.outcome : null;
 
       if (!map[contactId]) {
         map[contactId] = {
@@ -281,7 +316,23 @@ export default function Home() {
         };
       }
 
-      if (activityType === "whatsapp" && !map[contactId].whatsapp) {
+      if (
+        activityType === "whatsapp" &&
+        direction === "outbound" &&
+        outcome === "sent"
+      ) {
+        sentIds.add(contactId);
+      }
+
+      if (
+        activityType === "whatsapp" &&
+        !map[contactId].whatsapp &&
+        (
+          (direction === "outbound" && outcome === "sent") ||
+          (direction === "inbound" && outcome === "replied") ||
+          (!direction && !outcome)
+        )
+      ) {
         map[contactId].whatsapp = {
           contact_id: contactId,
           activity_type: "whatsapp",
@@ -303,6 +354,7 @@ export default function Home() {
     }
 
     setRecentActivities(map);
+    setWhatsappSentContactIds(Array.from(sentIds));
   }
 
   async function loadContacts(opts?: Partial<typeof queryState>) {
@@ -428,6 +480,7 @@ export default function Home() {
       setContacts([]);
       setTotal(0);
       setRecentActivities({});
+      setWhatsappSentContactIds([]);
       setLoading(false);
       return;
     }
@@ -702,6 +755,86 @@ export default function Home() {
     }
   }
 
+  async function handleMarkWhatsappReplyReceived(contact: Contact) {
+    if (!currentUserId) {
+      setErrorMsg("Utente non autenticato.");
+      return;
+    }
+
+    if (!contact.organization_id) {
+      setErrorMsg("organization_id mancante sul contatto.");
+      return;
+    }
+
+    setReplyLoadingContactId(contact.id);
+    setErrorMsg(null);
+
+    try {
+      const nowIso = new Date().toISOString();
+
+      const { error } = await supabase.from("contact_activities").insert({
+        organization_id: contact.organization_id,
+        contact_id: contact.id,
+        created_by: currentUserId,
+        activity_type: "whatsapp",
+        channel: "whatsapp",
+        template_id: null,
+        note: "Risposta ricevuta su WhatsApp",
+        metadata: {
+          source: "contacts_table_reply_received",
+          direction: "inbound",
+          outcome: "replied",
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const { error: updateError } = await supabase
+        .from("contacts")
+        .update({ last_contact_at: nowIso })
+        .eq("id", contact.id);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      setContacts((prev) =>
+        prev.map((c) =>
+          c.id === contact.id
+            ? {
+                ...c,
+                last_contact_at: nowIso,
+              }
+            : c
+        )
+      );
+
+      setRecentActivities((prev) => ({
+        ...prev,
+        [contact.id]: {
+          whatsapp: {
+            contact_id: contact.id,
+            activity_type: "whatsapp",
+            created_at: nowIso,
+            template_id: null,
+            template_title: "Risposta ricevuta",
+          },
+          email: prev[contact.id]?.email || null,
+        },
+      }));
+    } catch (error) {
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Errore nel salvataggio risposta WhatsApp."
+      );
+    } finally {
+      setReplyLoadingContactId(null);
+    }
+  }
+
   function getAgentName(agentId: string | null) {
     if (!agentId) return "-";
     const found = agents.find((a) => String(a.id) === String(agentId));
@@ -714,6 +847,11 @@ export default function Home() {
     setTemplateModalContact(null);
     setSelectedTemplateId("");
     setActionLoading(false);
+  }
+
+  function closeWhatsappOutcomeModal() {
+    setPendingWhatsappSend(null);
+    setWhatsappOutcomeLoading(false);
   }
 
   function tryOpenTemplateModal(contact: Contact, type: "whatsapp" | "email") {
@@ -747,6 +885,135 @@ export default function Home() {
     setErrorMsg(null);
   }
 
+  async function insertWhatsappOutcomeActivity(
+    pending: PendingWhatsappSend,
+    outcome: WhatsappOutcome
+  ) {
+    if (!currentUserId) {
+      throw new Error("Utente non autenticato.");
+    }
+
+    if (!pending.contact.organization_id) {
+      throw new Error("organization_id mancante sul contatto.");
+    }
+
+    const nowIso = new Date().toISOString();
+
+    const outcomeNoteMap: Record<WhatsappOutcome, string> = {
+      sent: `WhatsApp inviato con template: ${pending.template.title}`,
+      not_sent: `WhatsApp non inviato con template: ${pending.template.title}`,
+      no_whatsapp: `Contatto senza WhatsApp per template: ${pending.template.title}`,
+      error: `Errore invio WhatsApp con template: ${pending.template.title}`,
+      invalid_number: `Numero non valido per template WhatsApp: ${pending.template.title}`,
+    };
+
+    const metadata: Record<string, unknown> = {
+      ...pending.metadata,
+      direction: "outbound",
+      outcome,
+      template_id: pending.template.id,
+      campaign_name: pending.template.title,
+      template_title: pending.template.title,
+      source: "template_send_outcome_popup",
+    };
+
+    const { error: activityError } = await supabase
+      .from("contact_activities")
+      .insert({
+        organization_id: pending.contact.organization_id,
+        contact_id: pending.contact.id,
+        created_by: currentUserId,
+        activity_type: "whatsapp",
+        channel: "whatsapp",
+        template_id: pending.template.id,
+        note: outcomeNoteMap[outcome],
+        metadata,
+      });
+
+    if (activityError) {
+      throw new Error(activityError.message);
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      last_contact_at: nowIso,
+    };
+
+    if (outcome === "sent") {
+      updatePayload.lead_status = "contattato";
+    }
+
+    const { error: contactError } = await supabase
+      .from("contacts")
+      .update(updatePayload)
+      .eq("id", pending.contact.id);
+
+    if (contactError) {
+      throw new Error(contactError.message);
+    }
+
+    setContacts((prev) =>
+      prev.map((c) =>
+        c.id === pending.contact.id
+          ? {
+              ...c,
+              last_contact_at: nowIso,
+              lead_status: outcome === "sent" ? "contattato" : c.lead_status,
+            }
+          : c
+      )
+    );
+
+    if (outcome === "sent") {
+      setVerifiedWhatsappContactIds((prev) =>
+        prev.includes(pending.contact.id)
+          ? prev
+          : [...prev, pending.contact.id]
+      );
+
+      setWhatsappSentContactIds((prev) =>
+        prev.includes(pending.contact.id)
+          ? prev
+          : [...prev, pending.contact.id]
+      );
+
+      setRecentActivities((prev) => ({
+        ...prev,
+        [pending.contact.id]: {
+          whatsapp: {
+            contact_id: pending.contact.id,
+            activity_type: "whatsapp",
+            created_at: nowIso,
+            template_id: pending.template.id,
+            template_title: pending.template.title,
+          },
+          email: prev[pending.contact.id]?.email || null,
+        },
+      }));
+    }
+  }
+
+  async function handleWhatsappOutcome(outcome: WhatsappOutcome) {
+    if (!pendingWhatsappSend) {
+      setErrorMsg("Nessun invio WhatsApp in attesa.");
+      return;
+    }
+
+    setWhatsappOutcomeLoading(true);
+    setErrorMsg(null);
+
+    try {
+      await insertWhatsappOutcomeActivity(pendingWhatsappSend, outcome);
+      closeWhatsappOutcomeModal();
+    } catch (error) {
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Errore nel salvataggio esito WhatsApp."
+      );
+      setWhatsappOutcomeLoading(false);
+    }
+  }
+
   async function handleSendFromTemplate() {
     if (!templateModalContact || !templateModalType) {
       setErrorMsg("Contatto o tipo azione non validi.");
@@ -775,7 +1042,6 @@ export default function Home() {
     let note = "";
     let metadata: Record<string, unknown> = {
       template_title: selectedTemplate.title,
-      status: "opened",
     };
 
     let finalMessage = selectedTemplate.message;
@@ -870,17 +1136,25 @@ export default function Home() {
       const phone = templateModalContact.phone_primary?.trim() || "";
       targetUrl = buildWhatsAppUrl(phone, finalMessage);
 
-      if (!targetUrl) {
-        setErrorMsg("Numero WhatsApp non valido.");
-        setActionLoading(false);
-        return;
+      const pending: PendingWhatsappSend = {
+        contact: templateModalContact,
+        template: selectedTemplate,
+        finalMessage,
+        targetUrl,
+        metadata: {
+          ...metadata,
+          phone,
+        },
+      };
+
+      if (targetUrl) {
+        window.open(targetUrl as string, "_blank", "noopener,noreferrer");
       }
 
-      note = `Aperto WhatsApp con template: ${selectedTemplate.title}`;
-      metadata = {
-        ...metadata,
-        phone,
-      };
+      closeTemplateModal();
+      setPendingWhatsappSend(pending);
+      setActionLoading(false);
+      return;
     }
 
     if (templateModalType === "email") {
@@ -908,6 +1182,8 @@ export default function Home() {
         ...metadata,
         email,
         subject: selectedTemplate.subject || "",
+        direction: "outbound",
+        outcome: "opened",
       };
     }
 
@@ -939,36 +1215,18 @@ export default function Home() {
       setRecentActivities((prev) => ({
         ...prev,
         [templateModalContact.id]: {
-          whatsapp:
-            templateModalType === "whatsapp"
-              ? {
-                  contact_id: templateModalContact.id,
-                  activity_type: "whatsapp",
-                  created_at: result.last_contact_at,
-                  template_id: selectedTemplate.id,
-                  template_title: selectedTemplate.title,
-                }
-              : prev[templateModalContact.id]?.whatsapp || null,
-          email:
-            templateModalType === "email"
-              ? {
-                  contact_id: templateModalContact.id,
-                  activity_type: "email",
-                  created_at: result.last_contact_at,
-                  template_id: selectedTemplate.id,
-                  template_title: selectedTemplate.title,
-                }
-              : prev[templateModalContact.id]?.email || null,
+          whatsapp: prev[templateModalContact.id]?.whatsapp || null,
+          email: {
+            contact_id: templateModalContact.id,
+            activity_type: "email",
+            created_at: result.last_contact_at,
+            template_id: selectedTemplate.id,
+            template_title: selectedTemplate.title,
+          },
         },
       }));
 
-      if (!targetUrl) {
-        setErrorMsg("Impossibile aprire il link del messaggio.");
-        setActionLoading(false);
-        return;
-      }
-
-      window.open(targetUrl, "_blank", "noopener,noreferrer");
+      window.open(targetUrl as string, "_blank", "noopener,noreferrer");
       closeTemplateModal();
     } catch (error) {
       setErrorMsg(
@@ -1113,6 +1371,15 @@ export default function Home() {
     setExpandedNoteContactId(null);
   }
 
+  const computedWhatsappSentContactIds = Array.from(
+    new Set([
+      ...verifiedWhatsappContactIds,
+      ...Object.entries(recentActivities)
+        .filter(([, value]) => Boolean(value?.whatsapp))
+        .map(([contactId]) => contactId),
+    ])
+  );
+
   return (
     <>
       <main className="crm-page">
@@ -1229,6 +1496,24 @@ export default function Home() {
             </div>
           )}
 
+          {verifiedWhatsappContactIds.length > 0 && (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: "#ecfdf3",
+                border: "1px solid #86efac",
+                color: "#166534",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              WhatsApp verificato ✅ su {verifiedWhatsappContactIds.length} contatt
+              {verifiedWhatsappContactIds.length === 1 ? "o" : "i"} in questa sessione
+            </div>
+          )}
+
           <ContactsTable
             contacts={contacts}
             loading={loading}
@@ -1248,6 +1533,9 @@ export default function Home() {
             selectedContactIds={selectedContactIds}
             bulkAssignAgentId={bulkAssignAgentId}
             bulkAssignLoading={bulkAssignLoading}
+            verifiedWhatsappContactIds={verifiedWhatsappContactIds}
+            whatsappSentContactIds={computedWhatsappSentContactIds}
+            replyLoadingContactId={replyLoadingContactId}
             onToggleSelectedContact={(contactId) => {
               setSelectedContactIds((prev) =>
                 prev.includes(contactId)
@@ -1285,6 +1573,7 @@ export default function Home() {
             onOpenEmailTemplate={(contact) =>
               tryOpenTemplateModal(contact, "email")
             }
+            onMarkWhatsappReplyReceived={handleMarkWhatsappReplyReceived}
             onAssignContact={assignContact}
             getAgentName={getAgentName}
             onNoteDraftChange={(contactId, value) =>
@@ -1329,6 +1618,185 @@ export default function Home() {
         onSelectedTemplateIdChange={setSelectedTemplateId}
         onConfirm={handleSendFromTemplate}
       />
+
+      {pendingWhatsappSend && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              background: "#ffffff",
+              borderRadius: 18,
+              boxShadow: "0 25px 60px rgba(0,0,0,0.18)",
+              padding: 22,
+            }}
+          >
+            <div style={{ marginBottom: 10, fontSize: 20, fontWeight: 700 }}>
+              Esito invio WhatsApp
+            </div>
+
+            <div style={{ marginBottom: 18, color: "#475569", lineHeight: 1.5 }}>
+              Contatto:{" "}
+              <b>
+                {pendingWhatsappSend.contact.first_name || ""}{" "}
+                {pendingWhatsappSend.contact.last_name || ""}
+              </b>
+              <br />
+              Template: <b>{pendingWhatsappSend.template.title}</b>
+              <br />
+              Numero: <b>{pendingWhatsappSend.contact.phone_primary || "-"}</b>
+            </div>
+
+            {!pendingWhatsappSend.targetUrl && (
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "#fff7ed",
+                  border: "1px solid #fdba74",
+                  color: "#9a3412",
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Il link WhatsApp non è stato costruito correttamente. Puoi salvare
+                direttamente “Numero non valido”.
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+                gridTemplateColumns: "1fr 1fr",
+              }}
+            >
+              <button
+                type="button"
+                disabled={whatsappOutcomeLoading}
+                onClick={() => handleWhatsappOutcome("sent")}
+                style={{
+                  border: "none",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontWeight: 700,
+                  background: "#16a34a",
+                  color: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                WhatsApp inviato
+              </button>
+
+              <button
+                type="button"
+                disabled={whatsappOutcomeLoading}
+                onClick={() => handleWhatsappOutcome("not_sent")}
+                style={{
+                  border: "none",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontWeight: 700,
+                  background: "#475569",
+                  color: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                Non inviato
+              </button>
+
+              <button
+                type="button"
+                disabled={whatsappOutcomeLoading}
+                onClick={() => handleWhatsappOutcome("no_whatsapp")}
+                style={{
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontWeight: 700,
+                  background: "#fff",
+                  color: "#0f172a",
+                  cursor: "pointer",
+                }}
+              >
+                Contatto senza WhatsApp
+              </button>
+
+              <button
+                type="button"
+                disabled={whatsappOutcomeLoading}
+                onClick={() => handleWhatsappOutcome("error")}
+                style={{
+                  border: "1px solid #fecaca",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontWeight: 700,
+                  background: "#fff1f2",
+                  color: "#b91c1c",
+                  cursor: "pointer",
+                }}
+              >
+                Errore
+              </button>
+
+              <button
+                type="button"
+                disabled={whatsappOutcomeLoading}
+                onClick={() => handleWhatsappOutcome("invalid_number")}
+                style={{
+                  gridColumn: "1 / -1",
+                  border: "1px solid #fde68a",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontWeight: 700,
+                  background: "#fffbeb",
+                  color: "#92400e",
+                  cursor: "pointer",
+                }}
+              >
+                Numero non valido
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginTop: 16,
+              }}
+            >
+              <button
+                type="button"
+                disabled={whatsappOutcomeLoading}
+                onClick={closeWhatsappOutcomeModal}
+                style={{
+                  border: "1px solid #cbd5e1",
+                  background: "#fff",
+                  color: "#0f172a",
+                  borderRadius: 10,
+                  padding: "10px 14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -30,6 +30,7 @@ type UserProfile = {
   id: string;
   role: string | null;
   organization_id: string | null;
+  full_name?: string | null;
 };
 
 type LinkAsset = {
@@ -40,6 +41,16 @@ type LinkAsset = {
   link_type: "static" | "whatsapp_landing";
   static_url: string | null;
   is_active: boolean;
+};
+
+type AssignableUser = {
+  id: string;
+  full_name: string | null;
+  role: string | null;
+};
+
+type TemplateRow = MessageTemplate & {
+  assigned_user_id?: string | null;
 };
 
 function formatDateTime(value: string | null) {
@@ -62,10 +73,13 @@ export default function TemplatesPage() {
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
 
-  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [linkAssets, setLinkAssets] = useState<LinkAsset[]>([]);
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -81,20 +95,20 @@ export default function TemplatesPage() {
   const [message, setMessage] = useState("");
   const [variables, setVariables] = useState<string>("");
   const [linkedAssetId, setLinkedAssetId] = useState<string>("");
+  const [assignedUserId, setAssignedUserId] = useState<string>("");
 
   const [messageCursorPosition, setMessageCursorPosition] = useState(0);
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const normalizedRole = String(currentUserRole || "")
-    .trim()
-    .toLowerCase();
+  const normalizedRole = String(currentUserRole || "").trim().toLowerCase();
+  const isAdmin = normalizedRole === "admin";
 
   const canView =
     normalizedRole === "admin" ||
     normalizedRole === "manager" ||
     normalizedRole === "agent";
 
-  const canManage = normalizedRole === "admin";
+  const canManage = isAdmin;
 
   const filteredTemplates = useMemo(() => {
     if (!filterType) return templates;
@@ -105,6 +119,14 @@ export default function TemplatesPage() {
     if (!assetId) return null;
     const asset = linkAssets.find((item) => item.id === assetId);
     return asset?.name || null;
+  }
+
+  function getAssignableUserLabel(userId?: string | null) {
+    if (!userId) return "-";
+    const user = assignableUsers.find((item) => item.id === userId);
+    if (!user) return userId;
+    const roleLabel = user.role ? ` (${user.role})` : "";
+    return `${user.full_name || "Senza nome"}${roleLabel}`;
   }
 
   async function bootstrapAuth() {
@@ -121,10 +143,11 @@ export default function TemplatesPage() {
     }
 
     const userId = session.user.id;
+    setCurrentUserId(userId);
 
     const { data: profile, error } = await supabase
       .from("profiles")
-      .select("id, role, organization_id")
+      .select("id, role, organization_id, full_name")
       .eq("id", userId)
       .single();
 
@@ -137,6 +160,7 @@ export default function TemplatesPage() {
 
     const typedProfile = profile as UserProfile;
     setCurrentUserRole(typedProfile.role);
+    setCurrentUserName(typedProfile.full_name || null);
     setOrganizationId(typedProfile.organization_id);
     setCheckingAuth(false);
   }
@@ -176,8 +200,81 @@ export default function TemplatesPage() {
     setLinkAssets(normalizedAssets);
   }
 
-  async function loadTemplates(nextOrgId?: string | null) {
+  async function loadAssignableUsers() {
+    if (!isAdmin || !currentUserId) {
+      setAssignableUsers([]);
+      return;
+    }
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setAssignableUsers([
+          {
+            id: currentUserId,
+            full_name: currentUserName || "Admin",
+            role: "admin",
+          },
+        ]);
+        return;
+      }
+
+      const res = await fetch("/api/admin/agents/list", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const json = await res.json().catch(() => ({}));
+      const rows = Array.isArray(json) ? json : json?.agents || json?.data || [];
+
+      const normalized: AssignableUser[] = rows.map(
+        (row: {
+          id: string;
+          full_name?: string | null;
+          email?: string | null;
+          role?: string | null;
+        }) => ({
+          id: String(row.id),
+          full_name: row.full_name || row.email || "Senza nome",
+          role: row.role ? String(row.role) : "agent",
+        })
+      );
+
+      const hasCurrentAdmin = normalized.some(
+        (item) => String(item.id) === String(currentUserId)
+      );
+
+      const finalUsers = hasCurrentAdmin
+        ? normalized
+        : [
+            {
+              id: currentUserId,
+              full_name: currentUserName || "Admin",
+              role: "admin",
+            },
+            ...normalized,
+          ];
+
+      setAssignableUsers(finalUsers);
+    } catch {
+      setAssignableUsers([
+        {
+          id: currentUserId,
+          full_name: currentUserName || "Admin",
+          role: "admin",
+        },
+      ]);
+    }
+  }
+
+  async function loadTemplates(nextOrgId?: string | null, nextUserId?: string | null) {
     const orgId = nextOrgId ?? organizationId;
+    const userId = nextUserId ?? currentUserId;
 
     if (!orgId) {
       setTemplates([]);
@@ -188,13 +285,18 @@ export default function TemplatesPage() {
     setLoading(true);
     setErrorMsg(null);
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("message_templates")
       .select(
-        "id, organization_id, channel, type, title, subject, message, buttons, variables, is_active, linked_asset_id, preview_data, created_at, updated_at"
+        "id, organization_id, channel, type, title, subject, message, buttons, variables, is_active, linked_asset_id, preview_data, created_at, updated_at, assigned_user_id"
       )
-      .eq("organization_id", orgId)
-      .order("created_at", { ascending: false });
+      .eq("organization_id", orgId);
+
+    if (!isAdmin && userId) {
+      query = query.eq("assigned_user_id", userId);
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false });
 
     if (error) {
       setErrorMsg(error.message);
@@ -203,7 +305,7 @@ export default function TemplatesPage() {
       return;
     }
 
-    const normalizedTemplates: MessageTemplate[] = (data || []).map((t) => ({
+    const normalizedTemplates: TemplateRow[] = (data || []).map((t) => ({
       id: t.id,
       organization_id: t.organization_id,
       channel:
@@ -224,6 +326,7 @@ export default function TemplatesPage() {
           : null,
       created_at: t.created_at,
       updated_at: t.updated_at,
+      assigned_user_id: t.assigned_user_id || null,
     }));
 
     setTemplates(normalizedTemplates);
@@ -238,10 +341,11 @@ export default function TemplatesPage() {
     setMessage("");
     setVariables("");
     setLinkedAssetId("");
+    setAssignedUserId("");
     setMessageCursorPosition(0);
   }
 
-  function startEdit(template: MessageTemplate) {
+  function startEdit(template: TemplateRow) {
     if (!canManage) return;
 
     setEditingId(template.id);
@@ -253,6 +357,7 @@ export default function TemplatesPage() {
       Array.isArray(template.variables) ? template.variables.join(", ") : ""
     );
     setLinkedAssetId(template.linked_asset_id || "");
+    setAssignedUserId(template.assigned_user_id || "");
     setMessageCursorPosition(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -309,6 +414,11 @@ export default function TemplatesPage() {
       return;
     }
 
+    if (!assignedUserId) {
+      setErrorMsg("Seleziona l'utente a cui assegnare il template.");
+      return;
+    }
+
     const normalizedVariables = variables
       .split(",")
       .map((v) => v.trim())
@@ -328,6 +438,7 @@ export default function TemplatesPage() {
       is_active: true,
       linked_asset_id: linkedAssetId || null,
       preview_data: {},
+      assigned_user_id: assignedUserId,
     };
 
     if (editingId) {
@@ -353,7 +464,7 @@ export default function TemplatesPage() {
     }
 
     resetForm();
-    await loadTemplates(organizationId);
+    await loadTemplates(organizationId, currentUserId);
     setSaving(false);
   }
 
@@ -386,7 +497,7 @@ export default function TemplatesPage() {
       resetForm();
     }
 
-    await loadTemplates(organizationId);
+    await loadTemplates(organizationId, currentUserId);
     setDeletingId(null);
   }
 
@@ -396,12 +507,19 @@ export default function TemplatesPage() {
   }, []);
 
   useEffect(() => {
-    if (!checkingAuth && canView && organizationId) {
-      loadTemplates(organizationId);
+    if (!checkingAuth && canView && organizationId && currentUserId) {
+      loadTemplates(organizationId, currentUserId);
       loadLinkAssets(organizationId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkingAuth, organizationId, currentUserRole]);
+  }, [checkingAuth, organizationId, currentUserRole, currentUserId]);
+
+  useEffect(() => {
+    if (!checkingAuth && isAdmin && currentUserId) {
+      loadAssignableUsers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkingAuth, isAdmin, currentUserId, currentUserName]);
 
   if (checkingAuth) {
     return (
@@ -491,6 +609,29 @@ export default function TemplatesPage() {
               </div>
 
               <div style={{ display: "grid", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, marginBottom: 6 }}>Assegna a</div>
+                  <select
+                    value={assignedUserId}
+                    onChange={(e) => setAssignedUserId(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #ddd",
+                      background: "#fff",
+                    }}
+                  >
+                    <option value="">Seleziona utente</option>
+                    {assignableUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {(user.full_name || "Senza nome") +
+                          (user.role ? ` (${user.role})` : "")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <div style={{ fontSize: 14, marginBottom: 6 }}>Tipo</div>
                   <select
@@ -777,6 +918,11 @@ export default function TemplatesPage() {
 
                           <div style={{ fontWeight: 700, marginBottom: 6 }}>
                             {template.title}
+                          </div>
+
+                          <div style={{ marginBottom: 8 }}>
+                            <b>Assegnato a:</b>{" "}
+                            {getAssignableUserLabel(template.assigned_user_id || null)}
                           </div>
 
                           {template.type === "email" && (

@@ -555,10 +555,10 @@ export default function Home() {
       prev.map((c) =>
         c.id === contact.id
           ? {
-              ...c,
-              last_contact_at: result.lastContactAt,
-              lead_status: result.leadStatus,
-            }
+            ...c,
+            last_contact_at: result.lastContactAt,
+            lead_status: result.leadStatus,
+          }
           : c
       )
     );
@@ -587,9 +587,9 @@ export default function Home() {
       prev.map((c) =>
         c.id === contact.id
           ? {
-              ...c,
-              last_contact_at: result.nowIso,
-            }
+            ...c,
+            last_contact_at: result.nowIso,
+          }
           : c
       )
     );
@@ -661,10 +661,10 @@ export default function Home() {
       prev.map((c) =>
         c.id === pendingWhatsappSend.contact.id
           ? {
-              ...c,
-              last_contact_at: result.nowIso,
-              lead_status: outcome === "sent" ? "contattato" : c.lead_status,
-            }
+            ...c,
+            last_contact_at: result.nowIso,
+            lead_status: outcome === "sent" ? "contattato" : c.lead_status,
+          }
           : c
       )
     );
@@ -725,10 +725,10 @@ export default function Home() {
         prev.map((c) =>
           c.id === result.contactId
             ? {
-                ...c,
-                last_contact_at: result.lastContactAt,
-                lead_status: result.leadStatus,
-              }
+              ...c,
+              last_contact_at: result.lastContactAt,
+              lead_status: result.leadStatus,
+            }
             : c
         )
       );
@@ -794,11 +794,39 @@ export default function Home() {
             margin: "0 auto",
           }}
         >
-          <div style={{ marginBottom: 18 }}>
-            <h1 className="crm-page-title">Lead Gestion</h1>
-            <div className="crm-page-subtitle">
-              Database contatti Casa Corporation
+          <div
+            style={{
+              marginBottom: 18,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h1 className="crm-page-title">Lead Gestion</h1>
+              <div className="crm-page-subtitle">
+                Database contatti Casa Corporation
+              </div>
             </div>
+
+            <button
+              onClick={() => router.push("/contacts/import-private-ai")}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 14,
+                border: "1px solid #111",
+                background: "#111",
+                color: "#fff",
+                cursor: "pointer",
+                fontWeight: 700,
+                fontSize: 14,
+                boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
+              }}
+            >
+              ✨ Aggiungi privati IA
+            </button>
           </div>
 
           <ContactsFilters

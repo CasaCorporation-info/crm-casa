@@ -20,13 +20,36 @@ import {
   diffContactEditableFields,
   formatContactType,
   formatDateTime,
-  getFullName,
   normalizeEmail,
   normalizeTextInput,
 } from "@/components/contacts/utils";
 
 type EditableContact = Contact & {
+  display_name?: string | null;
   email_primary: string | null;
+  source_detail?: string | null;
+  notes?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+type ContactAiImport = {
+  id: string;
+  contact_id: string | null;
+  source_portal: string | null;
+  source_label: string | null;
+  image_url: string | null;
+  image_path: string | null;
+  listing_url: string | null;
+  extracted_phone: string | null;
+  extracted_name: string | null;
+  extracted_price: string | null;
+  extracted_address: string | null;
+  extracted_title: string | null;
+  extracted_description: string | null;
+  suggested_first_message: string | null;
+  import_status: string | null;
+  error_message: string | null;
+  created_at: string | null;
 };
 
 function extractEditableValues(contact: EditableContact): ContactFormValues {
@@ -40,6 +63,18 @@ function extractEditableValues(contact: EditableContact): ContactFormValues {
     lead_status: contact.lead_status,
     source: contact.source,
   };
+}
+
+function getDisplayContactName(contact: EditableContact | null) {
+  if (!contact) return "Scheda contatto";
+
+  const fullName = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
+  if (fullName) return fullName;
+
+  const displayName = String(contact.display_name || "").trim();
+  if (displayName) return displayName;
+
+  return "Scheda contatto";
 }
 
 export default function ContactDetailPage() {
@@ -57,15 +92,50 @@ export default function ContactDetailPage() {
   const [originalContact, setOriginalContact] = useState<EditableContact | null>(
     null
   );
+  const [aiImport, setAiImport] = useState<ContactAiImport | null>(null);
+  const [aiImageUrl, setAiImageUrl] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const normalizedRole = String(auth.role || "").trim().toLowerCase();
   const isAdminLike =
     normalizedRole === "admin" || normalizedRole === "manager";
 
-  const contactName = useMemo(
-    () => (c ? getFullName(c) : "Scheda contatto"),
-    [c]
-  );
+  const contactName = useMemo(() => getDisplayContactName(c), [c]);
+
+  async function loadAiImport(contactId: string) {
+    setAiLoading(true);
+    setAiImport(null);
+    setAiImageUrl(null);
+
+    const { data, error } = await supabase
+      .from("contact_ai_imports")
+      .select(
+        "id, contact_id, source_portal, source_label, image_url, image_path, listing_url, extracted_phone, extracted_name, extracted_price, extracted_address, extracted_title, extracted_description, suggested_first_message, import_status, error_message, created_at"
+      )
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      setAiLoading(false);
+      return;
+    }
+
+    const row = (data?.[0] || null) as ContactAiImport | null;
+    setAiImport(row);
+
+    if (row?.image_path) {
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from("contact-ai-imports")
+        .createSignedUrl(row.image_path, 60 * 60);
+
+      if (!signedError && signedData?.signedUrl) {
+        setAiImageUrl(signedData.signedUrl);
+      }
+    }
+
+    setAiLoading(false);
+  }
 
   async function loadContact() {
     if (!id) return;
@@ -76,7 +146,7 @@ export default function ContactDetailPage() {
     const { data, error } = await supabase
       .from("contacts")
       .select(
-        "id, organization_id, first_name, last_name, phone_primary, email_primary, city, contact_type, lead_status, source, assigned_agent_id, created_at, updated_at, last_contact_at"
+        "id, organization_id, first_name, last_name, display_name, phone_primary, email_primary, city, contact_type, lead_status, source, source_detail, notes, metadata, assigned_agent_id, created_at, updated_at, last_contact_at"
       )
       .eq("id", id)
       .single();
@@ -119,6 +189,8 @@ export default function ContactDetailPage() {
     setC(contact);
     setOriginalContact(contact);
     setLoading(false);
+
+    await loadAiImport(contact.id);
   }
 
   useEffect(() => {
@@ -421,6 +493,17 @@ export default function ContactDetailPage() {
     }
   }
 
+  async function handleCopySuggestedMessage() {
+    const message = aiImport?.suggested_first_message?.trim();
+    if (!message) return;
+
+    try {
+      await navigator.clipboard.writeText(message);
+    } catch {
+      setErrorMsg("Impossibile copiare il messaggio negli appunti.");
+    }
+  }
+
   if (loading) {
     return <div style={{ padding: 40 }}>Caricamento...</div>;
   }
@@ -447,7 +530,7 @@ export default function ContactDetailPage() {
   }
 
   return (
-    <div style={{ padding: 40, maxWidth: 1200 }}>
+    <div style={{ padding: 40, maxWidth: 1280 }}>
       <div
         style={{
           display: "flex",
@@ -577,9 +660,22 @@ export default function ContactDetailPage() {
       <div style={{ opacity: 0.7, marginBottom: 6 }}>
         Ultimo contatto: {formatDateTime(c.last_contact_at)}
       </div>
-      <div style={{ opacity: 0.7, marginBottom: 18 }}>
+      <div style={{ opacity: 0.7, marginBottom: 6 }}>
         Creato il: {formatDateTime(c.created_at)}
       </div>
+      {c.source_detail && (
+        <div style={{ opacity: 0.7, marginBottom: 18 }}>
+          Link annuncio:{" "}
+          <a
+            href={c.source_detail}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "#111" }}
+          >
+            apri link
+          </a>
+        </div>
+      )}
 
       {errorMsg && (
         <div
@@ -725,6 +821,20 @@ export default function ContactDetailPage() {
                 border: "1px solid #ddd",
               }}
             />
+
+            <textarea
+              value={c.notes ?? ""}
+              onChange={(e) => setC({ ...c, notes: e.target.value || null })}
+              placeholder="Note"
+              style={{
+                gridColumn: "1 / -1",
+                minHeight: 140,
+                resize: "vertical",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+              }}
+            />
           </div>
         </div>
 
@@ -757,6 +867,226 @@ export default function ContactDetailPage() {
             }
           />
         </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 22,
+          border: "1px solid #ddd",
+          borderRadius: 16,
+          padding: 18,
+          background: "#fff",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 18 }}>Box IA annuncio</div>
+            <div style={{ opacity: 0.7, marginTop: 4 }}>
+              Screenshot, dati estratti e primo messaggio consigliato
+            </div>
+          </div>
+
+          {aiImport?.listing_url && (
+            <a
+              href={aiImport.listing_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#fff",
+                color: "#111",
+                textDecoration: "none",
+              }}
+            >
+              Apri annuncio
+            </a>
+          )}
+        </div>
+
+        {aiLoading ? (
+          <div style={{ opacity: 0.7 }}>Caricamento dati IA...</div>
+        ) : !aiImport ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 12,
+              border: "1px dashed #ccc",
+              background: "#fafafa",
+              color: "#666",
+            }}
+          >
+            Nessun import IA collegato a questo contatto.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.05fr 0.95fr",
+              gap: 18,
+              alignItems: "start",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  borderRadius: 14,
+                  overflow: "hidden",
+                  border: "1px solid #ddd",
+                  background: "#fafafa",
+                  minHeight: 320,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {aiImageUrl ? (
+                  <img
+                    src={aiImageUrl}
+                    alt="Screenshot annuncio importato"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                      display: "block",
+                    }}
+                  />
+                ) : (
+                  <div style={{ padding: 24, color: "#666" }}>
+                    Screenshot non disponibile
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  border: "1px solid #eee",
+                  background: "#fcfcfc",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>
+                  Dati estratti
+                </div>
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div>
+                    <b>Portale:</b> {aiImport.source_portal || "-"}
+                  </div>
+                  <div>
+                    <b>Telefono:</b> {aiImport.extracted_phone || "-"}
+                  </div>
+                  <div>
+                    <b>Nome:</b> {aiImport.extracted_name || "-"}
+                  </div>
+                  <div>
+                    <b>Prezzo:</b> {aiImport.extracted_price || "-"}
+                  </div>
+                  <div>
+                    <b>Via / Indirizzo:</b> {aiImport.extracted_address || "-"}
+                  </div>
+                  <div>
+                    <b>Titolo:</b> {aiImport.extracted_title || "-"}
+                  </div>
+                  <div>
+                    <b>Stato import:</b> {aiImport.import_status || "-"}
+                  </div>
+                  <div>
+                    <b>Creato il:</b> {formatDateTime(aiImport.created_at)}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  border: "1px solid #eee",
+                  background: "#fcfcfc",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>
+                  Descrizione estratta
+                </div>
+                <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                  {aiImport.extracted_description || "-"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  border: "1px solid #d1fadf",
+                  background: "#f6fff8",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    marginBottom: 10,
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    Primo messaggio consigliato
+                  </div>
+
+                  <button
+                    onClick={handleCopySuggestedMessage}
+                    disabled={!aiImport.suggested_first_message}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #111",
+                      background: "#fff",
+                      color: "#111",
+                      cursor: aiImport.suggested_first_message
+                        ? "pointer"
+                        : "not-allowed",
+                      opacity: aiImport.suggested_first_message ? 1 : 0.5,
+                    }}
+                  >
+                    Copia
+                  </button>
+                </div>
+
+                <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                  {aiImport.suggested_first_message || "-"}
+                </div>
+              </div>
+
+              {aiImport.error_message && (
+                <div
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    border: "1px solid #ffb3b3",
+                    background: "#ffecec",
+                  }}
+                >
+                  <b>Errore import:</b> {aiImport.error_message}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

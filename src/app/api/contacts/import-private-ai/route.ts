@@ -17,6 +17,17 @@ type ExtractedListing = {
   suggested_first_message: string | null;
 };
 
+type ExistingContactRow = {
+  id: string;
+  display_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  phone_primary: string | null;
+  source: string | null;
+  source_detail: string | null;
+  notes: string | null;
+};
+
 function getBearerToken(req: Request) {
   const h =
     req.headers.get("authorization") || req.headers.get("Authorization");
@@ -50,6 +61,21 @@ function normalizeText(value: unknown) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeListingUrl(value: string | null | undefined) {
+  const text = normalizeText(value);
+  if (!text) return null;
+
+  if (/^https?:\/\//i.test(text)) {
+    return text;
+  }
+
+  if (/^[\w.-]+\.[a-z]{2,}\/?/i.test(text)) {
+    return `https://${text}`;
+  }
+
+  return null;
 }
 
 function safeJsonParse<T>(value: string): T | null {
@@ -121,6 +147,62 @@ function buildContactNotes(input: {
   return rows.join("\n");
 }
 
+function getExistingContactName(contact: ExistingContactRow) {
+  const displayName = normalizeText(contact.display_name);
+  if (displayName) return displayName;
+
+  const fullName = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
+  if (fullName) return fullName;
+
+  return "Contatto esistente";
+}
+
+async function findExistingContact(params: {
+  organizationId: string;
+  phone: string | null;
+  listingUrl: string | null;
+}) {
+  if (params.phone) {
+    const { data, error } = await supabaseAdmin
+      .from("contacts")
+      .select(
+        "id, display_name, first_name, last_name, phone_primary, source, source_detail, notes"
+      )
+      .eq("organization_id", params.organizationId)
+      .eq("phone_primary", params.phone)
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data) {
+      return {
+        reason: "phone" as const,
+        contact: data as ExistingContactRow,
+      };
+    }
+  }
+
+  if (params.listingUrl) {
+    const { data, error } = await supabaseAdmin
+      .from("contacts")
+      .select(
+        "id, display_name, first_name, last_name, phone_primary, source, source_detail, notes"
+      )
+      .eq("organization_id", params.organizationId)
+      .eq("source_detail", params.listingUrl)
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data) {
+      return {
+        reason: "listing_url" as const,
+        contact: data as ExistingContactRow,
+      };
+    }
+  }
+
+  return null;
+}
+
 async function callOpenAIForListingExtraction(
   base64Image: string,
   mimeType: string
@@ -142,7 +224,8 @@ Regole:
 - Se il numero di telefono non è visibile, usa null.
 - Se il nome del privato non è visibile, usa null.
 - Se il portale è riconoscibile, valorizza portal_source con il nome del portale.
-- Se il link annuncio non è leggibile nell'immagine, usa null.
+- listing_url va valorizzato SOLO se l'URL completo è chiaramente leggibile nello screenshot.
+- Se il link è parziale, ambiguo o non completo, usa null.
 - Mantieni prezzo e indirizzo come testo leggibile, senza inventare.
 - suggested_first_message deve essere breve, professionale, diretto, in italiano, pensato per un primo contatto WhatsApp o telefonico con un privato che vende o affitta.
 - Non inventare dati non presenti.
@@ -258,9 +341,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const myRole = String(me.role || "")
-      .trim()
-      .toLowerCase();
+    const myRole = String(me.role || "").trim().toLowerCase();
 
     if (!["admin", "manager", "agent"].includes(myRole)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -323,7 +404,7 @@ export async function POST(req: Request) {
           : null,
         image_path: imagePath,
         image_url: null,
-        listing_url: listingUrlInput,
+        listing_url: normalizeListingUrl(listingUrlInput),
         import_status: "pending",
       })
       .select("id")
@@ -332,8 +413,7 @@ export async function POST(req: Request) {
     if (importInsertError || !importRow?.id) {
       return NextResponse.json(
         {
-          error:
-            importInsertError?.message || "Errore creazione import.",
+          error: importInsertError?.message || "Errore creazione import.",
         },
         { status: 500 }
       );
@@ -364,7 +444,61 @@ export async function POST(req: Request) {
       portalSourceInput ||
       "Portale sconosciuto";
 
-    const listingUrl = normalizeText(parsed.listing_url) || listingUrlInput;
+    const listingUrl =
+      normalizeListingUrl(listingUrlInput) ||
+      normalizeListingUrl(parsed.listing_url);
+
+    const existingContactMatch = await findExistingContact({
+      organizationId: me.organization_id,
+      phone: extractedPhone,
+      listingUrl,
+    });
+
+    if (existingContactMatch) {
+      await supabaseAdmin
+        .from("contact_ai_imports")
+        .update({
+          source_portal: portalSource,
+          source_label: buildSourceLabel(portalSource),
+          listing_url: listingUrl,
+          extracted_phone: extractedPhone,
+          extracted_name: extractedName,
+          extracted_price: extractedPrice,
+          extracted_address: extractedAddress,
+          extracted_title: extractedTitle,
+          extracted_description: extractedDescription,
+          suggested_first_message: suggestedFirstMessage,
+          raw_ai_response: raw,
+          import_status: "failed",
+          error_message:
+            existingContactMatch.reason === "phone"
+              ? "Contatto già presente con lo stesso numero di telefono."
+              : "Contatto già presente con lo stesso link annuncio.",
+          contact_id: existingContactMatch.contact.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", importId);
+
+      return NextResponse.json(
+        {
+          error:
+            existingContactMatch.reason === "phone"
+              ? "È già presente un contatto con questo numero di telefono."
+              : "È già presente un contatto con questo link annuncio.",
+          duplicate: true,
+          duplicate_reason: existingContactMatch.reason,
+          contact: {
+            id: existingContactMatch.contact.id,
+            display_name: getExistingContactName(existingContactMatch.contact),
+            phone_primary: existingContactMatch.contact.phone_primary,
+            source: existingContactMatch.contact.source,
+            source_detail: existingContactMatch.contact.source_detail,
+            notes: existingContactMatch.contact.notes,
+          },
+        },
+        { status: 409 }
+      );
+    }
 
     const displayName = buildDisplayName({
       extractedName,

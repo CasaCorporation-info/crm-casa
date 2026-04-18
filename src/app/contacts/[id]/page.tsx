@@ -244,28 +244,26 @@ export default function ContactDetailPage() {
             template_id: null,
             note:
               change.field === "lead_status"
-                ? `Cambio stato lead: ${
-                    change.previousValue || "vuoto"
-                  } → ${change.nextValue || "vuoto"}`
-                : `MODIFICA ANAGRAFICA · ${change.label}: ${
-                    change.previousValue || "vuoto"
-                  } → ${change.nextValue || "vuoto"}`,
+                ? `Cambio stato lead: ${change.previousValue || "vuoto"
+                } → ${change.nextValue || "vuoto"}`
+                : `MODIFICA ANAGRAFICA · ${change.label}: ${change.previousValue || "vuoto"
+                } → ${change.nextValue || "vuoto"}`,
             metadata:
               change.field === "lead_status"
                 ? {
-                    source: "contact_edit",
-                    from_status: change.previousValue,
-                    to_status: change.nextValue,
-                    field_name: change.field,
-                    field_label: change.label,
-                  }
+                  source: "contact_edit",
+                  from_status: change.previousValue,
+                  to_status: change.nextValue,
+                  field_name: change.field,
+                  field_label: change.label,
+                }
                 : {
-                    source: "contact_edit",
-                    field_name: change.field,
-                    field_label: change.label,
-                    previous_value: change.previousValue,
-                    new_value: change.nextValue,
-                  },
+                  source: "contact_edit",
+                  field_name: change.field,
+                  field_label: change.label,
+                  previous_value: change.previousValue,
+                  new_value: change.nextValue,
+                },
           });
         }
       } catch {
@@ -368,10 +366,10 @@ export default function ContactDetailPage() {
       setC((prev) =>
         prev
           ? {
-              ...prev,
-              last_contact_at: result.last_contact_at,
-              lead_status: result.lead_status as LeadStatus | string | null,
-            }
+            ...prev,
+            last_contact_at: result.last_contact_at,
+            lead_status: result.lead_status as LeadStatus | string | null,
+          }
           : prev
       );
 
@@ -418,10 +416,10 @@ export default function ContactDetailPage() {
       setC((prev) =>
         prev
           ? {
-              ...prev,
-              last_contact_at: result.last_contact_at,
-              lead_status: result.lead_status as LeadStatus | string | null,
-            }
+            ...prev,
+            last_contact_at: result.last_contact_at,
+            lead_status: result.lead_status as LeadStatus | string | null,
+          }
           : prev
       );
 
@@ -474,10 +472,10 @@ export default function ContactDetailPage() {
       setC((prev) =>
         prev
           ? {
-              ...prev,
-              last_contact_at: result.last_contact_at,
-              lead_status: result.lead_status as LeadStatus | string | null,
-            }
+            ...prev,
+            last_contact_at: result.last_contact_at,
+            lead_status: result.lead_status as LeadStatus | string | null,
+          }
           : prev
       );
 
@@ -606,8 +604,8 @@ export default function ContactDetailPage() {
               opacity: normalizeTextInput(c.email_primary) ? 1 : 0.5,
               cursor:
                 !normalizeTextInput(c.email_primary) ||
-                actionLoading ||
-                deleteLoading
+                  actionLoading ||
+                  deleteLoading
                   ? "not-allowed"
                   : "pointer",
             }}
@@ -858,10 +856,10 @@ export default function ContactDetailPage() {
               setC((prev) =>
                 prev
                   ? {
-                      ...prev,
-                      last_contact_at,
-                      lead_status,
-                    }
+                    ...prev,
+                    last_contact_at,
+                    lead_status,
+                  }
                   : prev
               )
             }
@@ -895,23 +893,29 @@ export default function ContactDetailPage() {
             </div>
           </div>
 
-          {aiImport?.listing_url && (
-            <a
-              href={aiImport.listing_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#fff",
-                color: "#111",
-                textDecoration: "none",
-              }}
-            >
-              Apri annuncio
-            </a>
-          )}
+          <a
+            href={aiImport?.listing_url || undefined}
+            target={aiImport?.listing_url ? "_blank" : undefined}
+            rel={aiImport?.listing_url ? "noopener noreferrer" : undefined}
+            onClick={(e) => {
+              if (!aiImport?.listing_url) {
+                e.preventDefault();
+              }
+            }}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: "#fff",
+              color: "#111",
+              textDecoration: "none",
+              opacity: aiImport?.listing_url ? 1 : 0.45,
+              cursor: aiImport?.listing_url ? "pointer" : "not-allowed",
+              pointerEvents: "auto",
+            }}
+          >
+            Apri annuncio
+          </a>
         </div>
 
         {aiLoading ? (

@@ -215,23 +215,33 @@ async function callOpenAIForListingExtraction(
 
   const prompt = `
 Leggi questo screenshot di un annuncio immobiliare e restituisci SOLO un JSON valido.
-Ignora banner pubblicitari, pulsanti promozionali, navigazione del sito, badge, annunci sponsorizzati e qualsiasi testo non utile.
+Ignora banner pubblicitari, pulsanti promozionali, navigazione del sito e contenuti non rilevanti.
 
 Obiettivo:
 estrarre i dati utili per creare un lead privato in un CRM immobiliare.
 
-Regole:
-- Se il numero di telefono non è visibile, usa null.
-- Se il nome del privato non è visibile, usa null.
-- Se il portale è riconoscibile, valorizza portal_source con il nome del portale.
-- listing_url va valorizzato SOLO se l'URL completo è chiaramente leggibile nello screenshot.
-- Se il link è parziale, ambiguo o non completo, usa null.
-- Mantieni prezzo e indirizzo come testo leggibile, senza inventare.
-- suggested_first_message deve essere breve, professionale, diretto, in italiano, pensato per un primo contatto WhatsApp o telefonico con un privato che vende o affitta.
-- Non inventare dati non presenti.
-- Se un campo non è leggibile, usa null.
+REGOLE IMPORTANTI:
+- Il link dell'annuncio è spesso visibile nello screenshot, soprattutto nella barra URL: estrailo COMPLETAMENTE se leggibile.
+- Se il link è visibile ma spezzato, ricostruiscilo SOLO se è chiaramente identificabile e completo.
+- Se non sei sicuro al 100%, usa null.
+- Non inventare mai URL.
+- Numero telefono: solo se chiaramente leggibile.
+- Nome: solo se chiaramente leggibile.
+- Prezzo e indirizzo: estrai come testo reale.
 
-Schema JSON richiesto:
+MESSAGGIO CONSIGLIATO:
+- Deve essere scritto da un agente immobiliare verso un privato
+- breve (max 3 righe)
+- professionale, diretto, credibile
+- NON stile cliente che cerca casa
+- deve trasmettere valore concreto
+
+Esempio stile:
+"Buongiorno, sono Daniele di Casa Corporation.
+Ho visto il suo immobile e potrei aiutarla a trovare l'acquirente giusto in tempi rapidi.
+Se vuole, possiamo sentirci velocemente."
+
+Schema JSON:
 {
   "portal_source": string | null,
   "listing_url": string | null,
@@ -444,14 +454,14 @@ export async function POST(req: Request) {
       portalSourceInput ||
       "Portale sconosciuto";
 
-    const listingUrl =
+    const finalListingUrl =
       normalizeListingUrl(listingUrlInput) ||
       normalizeListingUrl(parsed.listing_url);
 
     const existingContactMatch = await findExistingContact({
       organizationId: me.organization_id,
       phone: extractedPhone,
-      listingUrl,
+      listingUrl: finalListingUrl,
     });
 
     if (existingContactMatch) {
@@ -460,7 +470,7 @@ export async function POST(req: Request) {
         .update({
           source_portal: portalSource,
           source_label: buildSourceLabel(portalSource),
-          listing_url: listingUrl,
+          listing_url: finalListingUrl,
           extracted_phone: extractedPhone,
           extracted_name: extractedName,
           extracted_price: extractedPrice,
@@ -508,7 +518,7 @@ export async function POST(req: Request) {
 
     const contactNotes = buildContactNotes({
       portalSource,
-      listingUrl,
+      listingUrl: finalListingUrl,
       price: extractedPrice,
       address: extractedAddress,
       title: extractedTitle,
@@ -519,7 +529,7 @@ export async function POST(req: Request) {
       source: "contact_ai_import",
       import_id: importId,
       portal_source: portalSource,
-      listing_url: listingUrl,
+      listing_url: finalListingUrl,
       extracted_price: extractedPrice,
       extracted_address: extractedAddress,
       extracted_title: extractedTitle,
@@ -539,7 +549,7 @@ export async function POST(req: Request) {
         contact_type: "cliente_generico",
         lead_status: "nuovo",
         source: buildSourceLabel(portalSource),
-        source_detail: listingUrl,
+        source_detail: finalListingUrl,
         notes: contactNotes,
         metadata: contactMetadata,
         assigned_agent_id: myRole === "agent" ? user.id : null,
@@ -554,7 +564,7 @@ export async function POST(req: Request) {
         .update({
           source_portal: portalSource,
           source_label: buildSourceLabel(portalSource),
-          listing_url: listingUrl,
+          listing_url: finalListingUrl,
           extracted_phone: extractedPhone,
           extracted_name: extractedName,
           extracted_price: extractedPrice,
@@ -592,7 +602,7 @@ export async function POST(req: Request) {
           source: "contact_ai_import",
           import_id: importId,
           portal_source: portalSource,
-          listing_url: listingUrl,
+          listing_url: finalListingUrl,
           extracted_phone: extractedPhone,
           extracted_name: extractedName,
           extracted_price: extractedPrice,
@@ -610,7 +620,7 @@ export async function POST(req: Request) {
           contact_id: createdContact.id,
           source_portal: portalSource,
           source_label: buildSourceLabel(portalSource),
-          listing_url: listingUrl,
+          listing_url: finalListingUrl,
           extracted_phone: extractedPhone,
           extracted_name: extractedName,
           extracted_price: extractedPrice,
@@ -642,7 +652,7 @@ export async function POST(req: Request) {
         source_label: buildSourceLabel(portalSource),
         image_path: imagePath,
         image_url: null,
-        listing_url: listingUrl,
+        listing_url: finalListingUrl,
         extracted_phone: extractedPhone,
         extracted_name: extractedName,
         extracted_price: extractedPrice,
@@ -679,7 +689,7 @@ export async function POST(req: Request) {
       },
       ai: {
         portal_source: portalSource,
-        listing_url: listingUrl,
+        listing_url: finalListingUrl,
         extracted_phone: extractedPhone,
         extracted_name: extractedName,
         extracted_price: extractedPrice,

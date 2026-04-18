@@ -54,6 +54,17 @@ function parseEditableNumber(value: string) {
   return Number(normalized);
 }
 
+const baseInputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: "12px",
+  border: "1px solid #cbd5e1",
+  background: "#fff",
+  color: "#0f172a",
+  outline: "none",
+  fontFamily: "inherit",
+};
+
 function EditableMoneyCard({
   label,
   value,
@@ -90,9 +101,9 @@ function EditableMoneyCard({
         value={value ? value.toLocaleString("it-IT") : ""}
         onChange={(e) => onChange(parseEditableNumber(e.target.value))}
         style={{
+          ...baseInputStyle,
           fontSize: "22px",
           fontWeight: 800,
-          borderRadius: "12px",
         }}
       />
       <div style={{ fontSize: "12px", color: "#64748b" }}>
@@ -142,6 +153,7 @@ function EditableTextField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        style={baseInputStyle}
       />
     </div>
   );
@@ -150,6 +162,7 @@ function EditableTextField({
 export default function ValuationPreview({ data, onChange }: Props) {
   return (
     <div
+      id="valuation-preview"
       style={{
         border: "1px solid #e2e8f0",
         borderRadius: "22px",
@@ -177,7 +190,12 @@ export default function ValuationPreview({ data, onChange }: Props) {
           </div>
         )}
         <div style={{ fontSize: "13px", color: "#64748b", lineHeight: 1.5 }}>
-          {[data.company.address, data.company.phone, data.company.email, data.company.website]
+          {[
+            data.company.address,
+            data.company.phone,
+            data.company.email,
+            data.company.website,
+          ]
             .filter(Boolean)
             .join(" • ")}
         </div>
@@ -222,6 +240,7 @@ export default function ValuationPreview({ data, onChange }: Props) {
             })
           }
           style={{
+            ...baseInputStyle,
             textAlign: "center",
             fontSize: "40px",
             fontWeight: 900,
@@ -510,7 +529,11 @@ export default function ValuationPreview({ data, onChange }: Props) {
               href={data.benefits.reviewsUrl}
               target="_blank"
               rel="noreferrer"
-              style={{ color: "#0f172a", fontWeight: 700, textDecoration: "underline" }}
+              style={{
+                color: "#0f172a",
+                fontWeight: 700,
+                textDecoration: "underline",
+              }}
             >
               {data.benefits.reviewsLabel}
             </a>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import jsPDF from "jspdf";
 import { supabase } from "@/lib/supabaseClient";
 import ValuationPreview, {
   type ValuationPreviewData,
@@ -28,6 +29,8 @@ type ValuationResult = {
   omiMax?: string | null;
 };
 
+type ValuationMode = "technical" | "free_text";
+
 const ORGANIZATION_ID = "1573b4fa-eb4a-4fb2-9c7e-fba3ef58a580";
 
 const COMPANY_INFO = {
@@ -36,8 +39,16 @@ const COMPANY_INFO = {
   address: "Via Davide Campari 205/207, Roma",
   phone: "",
   email: "",
-  website: "",
+  website: "www.holdingcasacorporation.it",
 };
+
+const PDF_LINKS = {
+  reviewsUrl: "https://holdingcasacorporation.it",
+  whatsappAgentUrl: "https://wa.me/393400000000?text=Ho%20letto%20la%20sua%20valutazione%20e%20presentazione%2C%20vorrei%20parlarne",
+  incaricoPdfUrl: "https://holdingcasacorporation.it",
+};
+
+const PDF_LOGO_URL = "/logo-casa-corporation.png";
 
 function getSectionTitle(section: string) {
   switch (section) {
@@ -154,6 +165,116 @@ function formatCurrency(value: number) {
   return `€ ${value.toLocaleString("it-IT")}`;
 }
 
+function formatCurrencyPlain(value: number) {
+  return `€${value.toLocaleString("it-IT")}`;
+}
+
+function sanitizeFileNamePart(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9\-]/g, "")
+    .slice(0, 40);
+}
+
+function getPdfFileName(preview: ValuationPreviewData | null, form: Record<string, any>) {
+  const address =
+    form.indirizzo_immobile ||
+    form.indirizzo ||
+    form.via ||
+    "valutazione";
+  const suggested = preview?.pricing?.suggested
+    ? String(preview.pricing.suggested)
+    : "casa-corporation";
+
+  return `valutazione-${sanitizeFileNamePart(address)}-${suggested}.pdf`;
+}
+
+function loadImageAsDataUrl(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        reject(new Error("Impossibile leggere il logo"));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => reject(new Error("Impossibile caricare il logo PDF"));
+    img.src = url;
+  });
+}
+
+function drawLuxuryBackground(pdf: jsPDF) {
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  pdf.setFillColor(9, 20, 52);
+  pdf.rect(0, 0, pageWidth, pageHeight, "F");
+
+  pdf.setDrawColor(32, 48, 92);
+  pdf.setLineWidth(0.2);
+
+  for (let x = 0; x <= pageWidth; x += 8) {
+    pdf.line(x, 0, x, pageHeight);
+  }
+
+  for (let y = 0; y <= pageHeight; y += 8) {
+    pdf.line(0, y, pageWidth, y);
+  }
+
+  pdf.setDrawColor(189, 155, 96);
+  pdf.setLineWidth(0.6);
+  pdf.roundedRect(7, 7, pageWidth - 14, pageHeight - 14, 4, 4);
+}
+
+function drawSectionTitle(pdf: jsPDF, title: string, y: number) {
+  pdf.setTextColor(242, 231, 211);
+  pdf.setFont("times", "bold");
+  pdf.setFontSize(18);
+  pdf.text(title, 105, y, { align: "center" });
+
+  pdf.setDrawColor(189, 155, 96);
+  pdf.setLineWidth(0.4);
+  pdf.line(25, y + 3, 70, y + 3);
+  pdf.line(140, y + 3, 185, y + 3);
+}
+
+function drawRoundedPanel(
+  pdf: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  fillColor: [number, number, number] = [14, 26, 60]
+) {
+  pdf.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
+  pdf.setDrawColor(189, 155, 96);
+  pdf.setLineWidth(0.5);
+  pdf.roundedRect(x, y, w, h, 4, 4, "FD");
+}
+
+function addWrappedText(
+  pdf: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight = 5.2
+) {
+  const lines = pdf.splitTextToSize(text, maxWidth);
+  pdf.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
 export default function ValuatorForm() {
   const [fields, setFields] = useState<Field[]>([]);
   const [form, setForm] = useState<Record<string, any>>({});
@@ -168,6 +289,10 @@ export default function ValuatorForm() {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<ValuationPreviewData | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [valuationMode, setValuationMode] =
+    useState<ValuationMode>("technical");
+  const [freePrompt, setFreePrompt] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   useEffect(() => {
     async function loadFields() {
@@ -270,22 +395,270 @@ export default function ValuatorForm() {
     } satisfies ValuationPreviewData;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleCreatePdf() {
+    if (!preview) {
+      setErrorMessage("Genera prima una valutazione");
+      return;
+    }
+
+    try {
+      setPdfLoading(true);
+      setErrorMessage("");
+
+      const pdf = new jsPDF("p", "mm", "a4");
+      const logoDataUrl = await loadImageAsDataUrl(PDF_LOGO_URL);
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const gold: [number, number, number] = [205, 169, 106];
+      const textLight: [number, number, number] = [245, 237, 221];
+      const softText: [number, number, number] = [218, 207, 190];
+      const panel: [number, number, number] = [14, 26, 60];
+
+      // PAGE 1
+      drawLuxuryBackground(pdf);
+
+      pdf.addImage(logoDataUrl, "PNG", 30, 12, 32, 22);
+
+      pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(22);
+      pdf.text("Casa Corporation", 105, 20, { align: "center" });
+
+      pdf.setTextColor(gold[0], gold[1], gold[2]);
+      pdf.setFont("times", "normal");
+      pdf.setFontSize(11);
+      pdf.text("Valutazioni immobiliari professionali", 105, 27, {
+        align: "center",
+      });
+
+      pdf.setTextColor(softText[0], softText[1], softText[2]);
+      pdf.setFontSize(10.5);
+      pdf.text("Via Davide Campari 205/207, Roma", 105, 34, {
+        align: "center",
+      });
+
+      drawSectionTitle(pdf, "Valutazione Immobiliare", 52);
+
+      drawRoundedPanel(pdf, 22, 60, 166, 38, panel);
+      pdf.setTextColor(gold[0], gold[1], gold[2]);
+      pdf.setFont("times", "normal");
+      pdf.setFontSize(14);
+      pdf.text("Prezzo di Vendita Consigliato", 105, 73, { align: "center" });
+
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(30);
+      pdf.text(formatCurrencyPlain(preview.pricing.suggested), 105, 86, {
+        align: "center",
+      });
+
+      const priceBoxY = 105;
+      const priceBoxW = 50;
+      const priceBoxH = 22;
+      const priceGap = 5;
+      const totalWidth = priceBoxW * 3 + priceGap * 2;
+      const startX = (pageWidth - totalWidth) / 2;
+
+      const priceItems = [
+        { label: "Prezzo minimo", value: preview.pricing.min },
+        { label: "Prezzo medio", value: preview.pricing.media },
+        { label: "Prezzo massimo", value: preview.pricing.max },
+      ];
+
+      priceItems.forEach((item, index) => {
+        const x = startX + index * (priceBoxW + priceGap);
+        drawRoundedPanel(pdf, x, priceBoxY, priceBoxW, priceBoxH, [18, 30, 66]);
+
+        pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
+        pdf.setFont("times", "normal");
+        pdf.setFontSize(11);
+        pdf.text(item.label, x + priceBoxW / 2, priceBoxY + 7, {
+          align: "center",
+        });
+
+        pdf.setTextColor(gold[0], gold[1], gold[2]);
+        pdf.setFont("times", "bold");
+        pdf.setFontSize(16);
+        pdf.text(formatCurrencyPlain(item.value), x + priceBoxW / 2, priceBoxY + 16, {
+          align: "center",
+        });
+      });
+
+      drawRoundedPanel(pdf, 22, 135, 166, 42, panel);
+      pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(17);
+      pdf.text("Analisi IA Casa Corporation", 105, 146, { align: "center" });
+
+      pdf.setDrawColor(gold[0], gold[1], gold[2]);
+      pdf.setLineWidth(0.3);
+      pdf.line(35, 150, 175, 150);
+
+      pdf.setTextColor(softText[0], softText[1], softText[2]);
+      pdf.setFont("times", "normal");
+      pdf.setFontSize(10.2);
+      addWrappedText(pdf, preview.ai.comment || "-", 32, 158, 146, 4.8);
+
+      drawRoundedPanel(pdf, 22, 186, 166, 55, panel);
+      pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(17);
+      pdf.text("Vantaggi di vendere con Casa Corporation", 105, 198, {
+        align: "center",
+      });
+
+      pdf.setFont("times", "normal");
+      pdf.setFontSize(13.5);
+      pdf.setTextColor(softText[0], softText[1], softText[2]);
+
+      const bulletX = 35;
+      let bulletY = 211;
+
+      pdf.text("✓", bulletX, bulletY);
+      pdf.text("Rinuncia al rimborso spese", bulletX + 8, bulletY);
+
+      bulletY += 11;
+      pdf.text("✓", bulletX, bulletY);
+      pdf.text("Affidabilità - Leggi le recensioni", bulletX + 8, bulletY);
+      pdf.link(86, bulletY - 5, 52, 6, { url: PDF_LINKS.reviewsUrl });
+
+      bulletY += 11;
+      pdf.text("✓", bulletX, bulletY);
+      pdf.text("Risorse IA all'avanguardia", bulletX + 8, bulletY);
+
+      pdf.setTextColor(gold[0], gold[1], gold[2]);
+      pdf.setFontSize(10);
+      pdf.text("Pagina 1 di 2", 105, 286, { align: "center" });
+
+      // PAGE 2
+      pdf.addPage();
+      drawLuxuryBackground(pdf);
+
+      pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(22);
+      pdf.text("La Tua Proprietà, la Nostra Missione", 105, 28, {
+        align: "center",
+      });
+
+      pdf.setTextColor(gold[0], gold[1], gold[2]);
+      pdf.setFont("times", "normal");
+      pdf.setFontSize(12);
+      pdf.text("Ecco cosa possiamo offrirti:", 105, 39, { align: "center" });
+
+      const cardY = 52;
+      const cardW = 54;
+      const cardH = 48;
+      const cardGap = 6;
+      const cardStartX = 18;
+
+      const cards = [
+        {
+          title: "Valutazione\nProfessionale",
+          text: "Metodo strutturato, supporto IA e lettura professionale del mercato.",
+        },
+        {
+          title: "Esperienza\nVentennale",
+          text: "Trattative complesse, posizionamento corretto e gestione venditore.",
+        },
+        {
+          title: "Risultati\nGarantiti",
+          text: "Strategia commerciale concreta per vendere meglio e più velocemente.",
+        },
+      ];
+
+      cards.forEach((card, index) => {
+        const x = cardStartX + index * (cardW + cardGap);
+        drawRoundedPanel(pdf, x, cardY, cardW, cardH, [16, 28, 64]);
+
+        pdf.setTextColor(gold[0], gold[1], gold[2]);
+        pdf.setFont("times", "bold");
+        pdf.setFontSize(16);
+        const titleLines = pdf.splitTextToSize(card.title, cardW - 10);
+        pdf.text(titleLines, x + cardW / 2, cardY + 14, { align: "center" });
+
+        pdf.setTextColor(softText[0], softText[1], softText[2]);
+        pdf.setFont("times", "normal");
+        pdf.setFontSize(9.5);
+        const bodyLines = pdf.splitTextToSize(card.text, cardW - 10);
+        pdf.text(bodyLines, x + cardW / 2, cardY + 31, { align: "center" });
+      });
+
+      drawRoundedPanel(pdf, 25, 120, 160, 24, [17, 31, 69]);
+      pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(16);
+      pdf.text("Contatta l'agente per info", 105, 131, { align: "center" });
+      pdf.setFont("times", "normal");
+      pdf.setFontSize(10);
+      pdf.setTextColor(softText[0], softText[1], softText[2]);
+      pdf.text("Risponderemo nel più breve tempo possibile", 105, 137, {
+        align: "center",
+      });
+      pdf.link(25, 120, 160, 24, { url: PDF_LINKS.whatsappAgentUrl });
+
+      drawRoundedPanel(pdf, 25, 152, 160, 24, [17, 31, 69]);
+      pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(16);
+      pdf.text("Visualizza Modulario d'Incarico", 105, 163, {
+        align: "center",
+      });
+      pdf.setFont("times", "normal");
+      pdf.setFontSize(10);
+      pdf.setTextColor(softText[0], softText[1], softText[2]);
+      pdf.text("Scopri come possiamo vendere al meglio il tuo immobile", 105, 169, {
+        align: "center",
+      });
+      pdf.link(25, 152, 160, 24, { url: PDF_LINKS.incaricoPdfUrl });
+
+      pdf.addImage(logoDataUrl, "PNG", 91, 243, 28, 18);
+
+      pdf.setDrawColor(189, 155, 96);
+      pdf.setLineWidth(0.4);
+      pdf.line(20, 268, 190, 268);
+
+      pdf.setTextColor(softText[0], softText[1], softText[2]);
+      pdf.setFont("times", "normal");
+      pdf.setFontSize(10.5);
+      pdf.text("Via Davide Campari 205/207, Roma", 105, 276, { align: "center" });
+      pdf.text("www.holdingcasacorporation.it", 105, 282, { align: "center" });
+
+      pdf.setTextColor(gold[0], gold[1], gold[2]);
+      pdf.setFontSize(10);
+      pdf.text("Pagina 2 di 2", 105, 288, { align: "center" });
+
+      pdf.save(getPdfFileName(preview, form));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Errore nella creazione del PDF"
+      );
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
+  async function handleTechnicalSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setErrorMessage("");
     setPreview(null);
 
     try {
-      const { error: saveError } = await supabase.from("property_valuations").insert({
-        organization_id: ORGANIZATION_ID,
-        contact_name: form.nominativo_venditori || null,
-        phone: form.recapito_telefonico || null,
-        email: form.email || null,
-        property_address: form.indirizzo_immobile || null,
-        property_data: form,
-        status: "draft",
-      });
+      const { error: saveError } = await supabase
+        .from("property_valuations")
+        .insert({
+          organization_id: ORGANIZATION_ID,
+          contact_name: form.nominativo_venditori || null,
+          phone: form.recapito_telefonico || null,
+          email: form.email || null,
+          property_address: form.indirizzo_immobile || null,
+          property_data: form,
+          status: "draft",
+        });
 
       if (saveError) {
         throw new Error("Errore salvataggio su Supabase");
@@ -304,7 +677,80 @@ export default function ValuatorForm() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.error || "Errore nella generazione della valutazione");
+        throw new Error(
+          data?.error || "Errore nella generazione della valutazione"
+        );
+      }
+
+      if (
+        typeof data?.min !== "number" ||
+        typeof data?.max !== "number" ||
+        typeof data?.media !== "number" ||
+        typeof data?.commento !== "string"
+      ) {
+        throw new Error("Risposta API non valida");
+      }
+
+      setPreview(buildPreviewFromResult(data));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Errore imprevisto"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFreeTextSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMessage("");
+    setPreview(null);
+
+    try {
+      const trimmedPrompt = freePrompt.trim();
+
+      if (!trimmedPrompt) {
+        throw new Error("Inserisci un testo prima di generare la valutazione");
+      }
+
+      const { error: saveError } = await supabase
+        .from("property_valuations")
+        .insert({
+          organization_id: ORGANIZATION_ID,
+          contact_name: null,
+          phone: null,
+          email: null,
+          property_address: null,
+          property_data: {
+            mode: "free_text",
+            prompt: trimmedPrompt,
+          },
+          status: "draft",
+        });
+
+      if (saveError) {
+        throw new Error("Errore salvataggio su Supabase");
+      }
+
+      const response = await fetch("/api/valuator/chatgpt", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "free_text",
+          prompt: trimmedPrompt,
+          organization_id: ORGANIZATION_ID,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error || "Errore nella generazione della valutazione"
+        );
       }
 
       if (
@@ -453,76 +899,251 @@ export default function ValuatorForm() {
 
   return (
     <div style={{ display: "grid", gap: "24px", maxWidth: "1100px" }}>
-      <form onSubmit={handleSubmit} style={{ display: "grid", gap: "16px" }}>
-        {visibleSections.map((sectionKey) => {
-          const sectionFields = grouped[sectionKey];
-          const isOpen = !!openSections[sectionKey];
-
-          return (
-            <div
-              key={sectionKey}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: "14px",
-                overflow: "hidden",
-                background: "#fff",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => toggleSection(sectionKey)}
-                style={{
-                  width: "100%",
-                  padding: "16px",
-                  border: "none",
-                  background: "#f8f8f8",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  fontSize: "18px",
-                  fontWeight: 700,
-                  textAlign: "left",
-                }}
-              >
-                <span>{getSectionTitle(sectionKey)}</span>
-                <span style={{ fontSize: "20px" }}>{isOpen ? "−" : "+"}</span>
-              </button>
-
-              {isOpen && (
-                <div style={{ padding: "16px", display: "grid", gap: "14px" }}>
-                  {sectionFields.map((field) => (
-                    <div key={field.id} style={{ display: "grid", gap: "6px" }}>
-                      <label style={{ fontWeight: 600 }}>
-                        {field.field_label}
-                        {field.is_required ? " *" : ""}
-                      </label>
-                      {renderField(field)}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        <button
-          type="submit"
-          disabled={loading}
+      <div
+        style={{
+          display: "grid",
+          gap: "12px",
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: "16px",
+          padding: "16px",
+        }}
+      >
+        <div
           style={{
-            padding: "14px 18px",
-            borderRadius: "12px",
-            border: "none",
-            background: loading ? "#666" : "#111",
-            color: "#fff",
-            fontWeight: 700,
-            cursor: loading ? "not-allowed" : "pointer",
-            opacity: loading ? 0.8 : 1,
+            fontSize: "20px",
+            fontWeight: 800,
+            color: "#111827",
           }}
         >
-          {loading ? "Generazione in corso..." : "Genera valutazione"}
-        </button>
-      </form>
+          Scegli modalità valutazione
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: "12px",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setValuationMode("technical");
+              setErrorMessage("");
+              setPreview(null);
+            }}
+            style={{
+              padding: "16px",
+              borderRadius: "14px",
+              border:
+                valuationMode === "technical"
+                  ? "2px solid #111"
+                  : "1px solid #d1d5db",
+              background: valuationMode === "technical" ? "#f8fafc" : "#fff",
+              textAlign: "left",
+              cursor: "pointer",
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: "16px",
+                marginBottom: "6px",
+              }}
+            >
+              Valutazione con dati tecnici
+            </div>
+            <div
+              style={{ color: "#6b7280", fontSize: "14px", lineHeight: 1.5 }}
+            >
+              Usa il form strutturato che hai già costruito.
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setValuationMode("free_text");
+              setErrorMessage("");
+              setPreview(null);
+            }}
+            style={{
+              padding: "16px",
+              borderRadius: "14px",
+              border:
+                valuationMode === "free_text"
+                  ? "2px solid #111"
+                  : "1px solid #d1d5db",
+              background: valuationMode === "free_text" ? "#f8fafc" : "#fff",
+              textAlign: "left",
+              cursor: "pointer",
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: "16px",
+                marginBottom: "6px",
+              }}
+            >
+              Valutazione con testo libero
+            </div>
+            <div
+              style={{ color: "#6b7280", fontSize: "14px", lineHeight: 1.5 }}
+            >
+              Scrivi liberamente la descrizione dell’immobile e genera la stessa
+              preview finale.
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {valuationMode === "technical" ? (
+        <form
+          onSubmit={handleTechnicalSubmit}
+          style={{ display: "grid", gap: "16px" }}
+        >
+          {visibleSections.map((sectionKey) => {
+            const sectionFields = grouped[sectionKey];
+            const isOpen = !!openSections[sectionKey];
+
+            return (
+              <div
+                key={sectionKey}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: "14px",
+                  overflow: "hidden",
+                  background: "#fff",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleSection(sectionKey)}
+                  style={{
+                    width: "100%",
+                    padding: "16px",
+                    border: "none",
+                    background: "#f8f8f8",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    fontSize: "18px",
+                    fontWeight: 700,
+                    textAlign: "left",
+                  }}
+                >
+                  <span>{getSectionTitle(sectionKey)}</span>
+                  <span style={{ fontSize: "20px" }}>{isOpen ? "−" : "+"}</span>
+                </button>
+
+                {isOpen && (
+                  <div
+                    style={{ padding: "16px", display: "grid", gap: "14px" }}
+                  >
+                    {sectionFields.map((field) => (
+                      <div
+                        key={field.id}
+                        style={{ display: "grid", gap: "6px" }}
+                      >
+                        <label style={{ fontWeight: 600 }}>
+                          {field.field_label}
+                          {field.is_required ? " *" : ""}
+                        </label>
+                        {renderField(field)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              padding: "14px 18px",
+              borderRadius: "12px",
+              border: "none",
+              background: loading ? "#666" : "#111",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.8 : 1,
+            }}
+          >
+            {loading ? "Generazione in corso..." : "Genera valutazione"}
+          </button>
+        </form>
+      ) : (
+        <form
+          onSubmit={handleFreeTextSubmit}
+          style={{ display: "grid", gap: "16px" }}
+        >
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: "14px",
+              background: "#fff",
+              padding: "16px",
+              display: "grid",
+              gap: "12px",
+            }}
+          >
+            <label style={{ fontWeight: 700, fontSize: "16px" }}>
+              Descrizione libera immobile
+            </label>
+
+            <textarea
+              value={freePrompt}
+              onChange={(e) => setFreePrompt(e.target.value)}
+              rows={12}
+              placeholder="Esempio: Appartamento in Roma zona Tuscolana, 95 mq, terzo piano senza ascensore, da ristrutturare, doppia esposizione, balcone, luminoso, richiesta 279.000 euro..."
+              style={{
+                width: "100%",
+                padding: "14px",
+                borderRadius: "12px",
+                border: "1px solid #d0d5dd",
+                resize: "vertical",
+              }}
+            />
+
+            <div
+              style={{
+                fontSize: "13px",
+                color: "#6b7280",
+                lineHeight: 1.5,
+              }}
+            >
+              Qui puoi scrivere liberamente il testo. La risposta andrà
+              comunque a popolare la stessa preview finale della valutazione
+              tecnica.
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              padding: "14px 18px",
+              borderRadius: "12px",
+              border: "none",
+              background: loading ? "#666" : "#111",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.8 : 1,
+            }}
+          >
+            {loading
+              ? "Generazione in corso..."
+              : "Genera valutazione da testo libero"}
+          </button>
+        </form>
+      )}
 
       {errorMessage && (
         <div
@@ -576,6 +1197,32 @@ export default function ValuatorForm() {
 
           <div
             style={{
+              display: "flex",
+              gap: "12px",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleCreatePdf}
+              disabled={pdfLoading}
+              style={{
+                padding: "12px 16px",
+                borderRadius: "10px",
+                border: "none",
+                background: pdfLoading ? "#60a5fa" : "#2563eb",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: pdfLoading ? "not-allowed" : "pointer",
+                opacity: pdfLoading ? 0.85 : 1,
+              }}
+            >
+              {pdfLoading ? "Creazione PDF..." : "Crea PDF"}
+            </button>
+          </div>
+
+          <div
+            style={{
               border: "1px dashed #cbd5e1",
               borderRadius: "16px",
               padding: "16px",
@@ -604,7 +1251,13 @@ export default function ValuatorForm() {
                 background: "#fff",
               }}
             >
-              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#6b7280",
+                  marginBottom: "6px",
+                }}
+              >
                 Prezzo minimo
               </div>
               <div style={{ fontSize: "22px", fontWeight: 800 }}>
@@ -620,7 +1273,13 @@ export default function ValuatorForm() {
                 background: "#fff",
               }}
             >
-              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#6b7280",
+                  marginBottom: "6px",
+                }}
+              >
                 Prezzo medio
               </div>
               <div style={{ fontSize: "22px", fontWeight: 800 }}>
@@ -636,7 +1295,13 @@ export default function ValuatorForm() {
                 background: "#fff",
               }}
             >
-              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#6b7280",
+                  marginBottom: "6px",
+                }}
+              >
                 Prezzo massimo
               </div>
               <div style={{ fontSize: "22px", fontWeight: 800 }}>
@@ -652,7 +1317,13 @@ export default function ValuatorForm() {
                 background: "#fff",
               }}
             >
-              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#6b7280",
+                  marginBottom: "6px",
+                }}
+              >
                 Prezzo consigliato
               </div>
               <div style={{ fontSize: "22px", fontWeight: 800 }}>

@@ -12,6 +12,7 @@ export default function AppShell({
 }) {
   const { role, fullName } = useAuthContext();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [kpiOpen, setKpiOpen] = useState(false);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -25,13 +26,12 @@ export default function AppShell({
     normalizedRole === "agent" ||
     normalizedRole === "manager";
 
-  const canSeeWhatsAppAnalytics =
-    normalizedRole === "admin" ||
-    normalizedRole === "agent" ||
-    normalizedRole === "manager";
-
   function closeSidebar() {
     setSidebarOpen(false);
+  }
+
+  function toggleKpiMenu() {
+    setKpiOpen((prev) => !prev);
   }
 
   return (
@@ -96,15 +96,61 @@ export default function AppShell({
             </Link>
           )}
 
-          {canSeeWhatsAppAnalytics && (
-            <Link
-              href="/whatsapp-analytics"
+          <div className="crm-sidebar-section">
+            <button
+              type="button"
+              onClick={toggleKpiMenu}
               className="crm-sidebar-link"
-              onClick={closeSidebar}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
+              aria-expanded={kpiOpen}
             >
-              WhatsApp Analytics
-            </Link>
-          )}
+              <span>KPI</span>
+              <span>{kpiOpen ? "▾" : "▸"}</span>
+            </button>
+
+            {kpiOpen && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  marginLeft: "12px",
+                }}
+              >
+                <Link
+                  href="/whatsapp-analytics"
+                  className="crm-sidebar-link"
+                  onClick={closeSidebar}
+                >
+                  WhatsApp Analytics
+                </Link>
+
+                <Link
+                  href="/lead-tracking"
+                  className="crm-sidebar-link"
+                  onClick={closeSidebar}
+                >
+                  Tracciamento Leads
+                </Link>
+
+                <Link
+                  href="/contact-alerts"
+                  className="crm-sidebar-link"
+                  onClick={closeSidebar}
+                >
+                  Alert IA
+                </Link>
+              </div>
+            )}
+          </div>
 
           {normalizedRole === "admin" && (
             <Link

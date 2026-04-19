@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LandingButton } from "@/lib/whatsappLinks";
 
 type Props = {
   token: string;
+  linkId: string;
+  organizationId: string;
+  contactId: string;
+  templateId: string | null;
+  campaignName: string | null;
+  whatsappNumber: string;
   title: string;
   body: string;
   footer: string | null;
@@ -13,6 +19,12 @@ type Props = {
 
 export default function WhatsAppLandingClient({
   token,
+  linkId,
+  organizationId,
+  contactId,
+  templateId,
+  campaignName,
+  whatsappNumber,
   title,
   body,
   footer,
@@ -20,6 +32,12 @@ export default function WhatsAppLandingClient({
 }: Props) {
   const openedRef = useRef(false);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
+
+  const visibleButtons = useMemo(() => {
+    return buttons.filter(
+      (button) => button.label?.trim() && button.message?.trim()
+    );
+  }, [buttons]);
 
   useEffect(() => {
     if (openedRef.current) return;
@@ -30,9 +48,17 @@ export default function WhatsAppLandingClient({
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({
+        token,
+        linkId,
+        organizationId,
+        contactId,
+        templateId,
+        campaignName,
+        whatsappNumber,
+      }),
     }).catch(() => {});
-  }, [token]);
+  }, [token, linkId, organizationId, contactId, templateId, campaignName, whatsappNumber]);
 
   async function handleClick(buttonKey: string) {
     try {
@@ -45,6 +71,12 @@ export default function WhatsAppLandingClient({
         },
         body: JSON.stringify({
           token,
+          linkId,
+          organizationId,
+          contactId,
+          templateId,
+          campaignName,
+          whatsappNumber,
           buttonKey,
         }),
       });
@@ -121,7 +153,7 @@ export default function WhatsAppLandingClient({
           </div>
 
           <div style={{ display: "grid", gap: 10 }}>
-            {buttons.map((button) => (
+            {visibleButtons.map((button) => (
               <button
                 key={button.key}
                 onClick={() => handleClick(button.key)}

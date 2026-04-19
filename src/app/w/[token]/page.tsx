@@ -29,6 +29,12 @@ export default async function WhatsAppLandingPage({ params }: Props) {
   return (
     <WhatsAppLandingClient
       token={data.token}
+      linkId={data.id}
+      organizationId={data.organization_id}
+      contactId={data.contact_id}
+      templateId={data.template_id}
+      campaignName={data.campaign_name}
+      whatsappNumber={data.whatsapp_number}
       title={data.landing_title}
       body={data.landing_body}
       footer={data.landing_footer}

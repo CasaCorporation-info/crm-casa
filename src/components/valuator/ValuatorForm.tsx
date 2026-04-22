@@ -80,7 +80,9 @@ const COMPANY_INFO = {
 
 const PDF_LOGO_URL = "/logo-casa-corporation.png";
 const DEFAULT_WEBSITE_URL =
-  process.env.NEXT_PUBLIC_APP_URL || "https://crm-casa.vercel.app";
+  typeof window !== "undefined"
+    ? window.location.origin
+    : process.env.NEXT_PUBLIC_APP_URL || "https://crm-casa.vercel.app";
 
 function getSectionTitle(section: string) {
   switch (section) {
@@ -770,6 +772,11 @@ export default function ValuatorForm() {
       setGeneratedPdfTrackedUrl("");
       setGeneratedPdfStoragePath("");
 
+      const runtimeWebsiteUrl =
+        typeof window !== "undefined"
+          ? window.location.origin
+          : DEFAULT_WEBSITE_URL;
+
       const { userId, whatsappNumber } = await findCurrentUserAndWhatsapp();
       let contactId: string | null = null;
 
@@ -789,7 +796,7 @@ export default function ValuatorForm() {
         "reviews_url",
         "https://recensioni.holdingcasacorporation.it/"
       );
-      prepareFormData.append("website_url", DEFAULT_WEBSITE_URL);
+      prepareFormData.append("website_url", runtimeWebsiteUrl);
       prepareFormData.append("whatsapp_number", whatsappNumber);
 
       const prepareResponse = await fetch("/api/valuator/upload-pdf", {
@@ -814,7 +821,7 @@ export default function ValuatorForm() {
         incaricoPdfUrl:
           prepareData.incarico?.tracked_url ||
           "https://holdingcasacorporation.it",
-        websiteUrl: DEFAULT_WEBSITE_URL,
+        websiteUrl: runtimeWebsiteUrl,
       };
 
       const pdf = await buildPdfDocument(preview, links);
@@ -833,7 +840,7 @@ export default function ValuatorForm() {
         "valuation_pdf_token",
         prepareData.valuation_pdf.token
       );
-      finalizeFormData.append("website_url", DEFAULT_WEBSITE_URL);
+      finalizeFormData.append("website_url", runtimeWebsiteUrl);
       finalizeFormData.append("file", pdfFile);
 
       const finalizeResponse = await fetch("/api/valuator/upload-pdf", {

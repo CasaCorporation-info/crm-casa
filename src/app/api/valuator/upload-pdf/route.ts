@@ -29,6 +29,14 @@ function buildStoragePath({
   return `${organizationId}/${year}/${month}/${contactSegment}/valutazione-${timestamp}.pdf`;
 }
 
+function buildPublicValuationUrl(baseUrl: string, token: string) {
+  return `${baseUrl}/${token}`;
+}
+
+function buildTrackedLinkUrl(baseUrl: string, token: string) {
+  return `${baseUrl}/vl/${token}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -53,7 +61,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const contactIdSafe = contactId || null;
+    const baseUrl = "https://valutazioni.holdingcasacorporation.it"; const contactIdSafe = contactId || null;
     const agentId = agentIdRaw || null;
 
     if (mode === "prepare") {
@@ -177,28 +185,34 @@ export async function POST(request: NextRequest) {
       const whatsappRow = insertedRows?.find((row) => row.link_type === "whatsapp");
       const incaricoRow = insertedRows?.find((row) => row.link_type === "incarico");
 
-      const baseUrl = websiteUrl.replace(/\/$/, "");
+      const valuationPdfResolvedToken =
+        valuationPdfRow?.token ?? valuationPdfToken;
+      const reviewsResolvedToken = reviewsRow?.token ?? reviewsToken;
+      const whatsappResolvedToken = whatsappRow?.token ?? whatsappToken;
 
       return NextResponse.json({
         success: true,
         mode: "prepare",
         valuation_pdf: {
-          token: valuationPdfRow?.token ?? valuationPdfToken,
-          tracked_url: `${baseUrl}/v/${valuationPdfRow?.token ?? valuationPdfToken}`,
+          token: valuationPdfResolvedToken,
+          tracked_url: buildPublicValuationUrl(
+            baseUrl,
+            valuationPdfResolvedToken
+          ),
         },
         reviews: {
-          token: reviewsRow?.token ?? reviewsToken,
-          tracked_url: `${baseUrl}/vl/${reviewsRow?.token ?? reviewsToken}`,
+          token: reviewsResolvedToken,
+          tracked_url: buildTrackedLinkUrl(baseUrl, reviewsResolvedToken),
         },
         whatsapp: {
-          token: whatsappRow?.token ?? whatsappToken,
-          tracked_url: `${baseUrl}/vl/${whatsappRow?.token ?? whatsappToken}`,
+          token: whatsappResolvedToken,
+          tracked_url: buildTrackedLinkUrl(baseUrl, whatsappResolvedToken),
         },
         incarico: incaricoRow
           ? {
-              token: incaricoRow.token,
-              tracked_url: `${baseUrl}/vl/${incaricoRow.token}`,
-            }
+            token: incaricoRow.token,
+            tracked_url: buildTrackedLinkUrl(baseUrl, incaricoRow.token),
+          }
           : null,
       });
     }
@@ -278,7 +292,7 @@ export async function POST(request: NextRequest) {
         mode: "finalize",
         storage_path: storagePath,
         destination_url: pdfDestinationUrl,
-        tracked_url: `${websiteUrl.replace(/\/$/, "")}/v/${valuationPdfToken}`,
+        tracked_url: buildPublicValuationUrl(baseUrl, valuationPdfToken),
       });
     }
 

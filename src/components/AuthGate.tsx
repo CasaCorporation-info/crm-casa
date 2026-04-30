@@ -18,11 +18,23 @@ export default function AuthGate({ children }: AuthGateProps) {
 
   const isLoginPage = pathname === "/login";
   const isPublicWhatsAppPage = pathname?.startsWith("/w/");
+  const isPublicValuationInternalPage = pathname?.startsWith(
+    "/valutazioni/holdingcasacorporation/"
+  );
+
+  const isPublicValuationDomain =
+    typeof window !== "undefined" &&
+    window.location.hostname === "valutazioni.holdingcasacorporation.it";
+
+  const isPublicPage =
+    isPublicWhatsAppPage ||
+    isPublicValuationInternalPage ||
+    isPublicValuationDomain;
 
   useEffect(() => {
     let mounted = true;
 
-    if (isPublicWhatsAppPage) {
+    if (isPublicPage) {
       setChecking(false);
       return;
     }
@@ -57,6 +69,8 @@ export default function AuthGate({ children }: AuthGateProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (isPublicPage) return;
+
       const loggedIn = !!session;
       setIsAuthenticated(loggedIn);
 
@@ -74,9 +88,9 @@ export default function AuthGate({ children }: AuthGateProps) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [router, pathname, isLoginPage, isPublicWhatsAppPage]);
+  }, [router, pathname, isLoginPage, isPublicPage]);
 
-  if (isPublicWhatsAppPage) {
+  if (isPublicPage) {
     return <>{children}</>;
   }
 

@@ -28,16 +28,20 @@ export default async function RootLayout({
   const headersList = await headers();
   const host = headersList.get("host") || "";
 
-  const isPublicValuationDomain = host.startsWith(
+  const isValuationPublicDomain = host.includes(
     "valutazioni.holdingcasacorporation.it"
   );
 
-  if (isPublicValuationDomain) {
+  if (isValuationPublicDomain) {
     return (
       <html lang="it">
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-          style={{ margin: 0, background: "#111", color: "#111" }}
+          style={{
+            margin: 0,
+            background: "#111",
+            color: "#fff",
+          }}
         >
           {children}
         </body>

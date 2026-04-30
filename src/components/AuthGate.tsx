@@ -21,6 +21,7 @@ export default function AuthGate({ children }: AuthGateProps) {
   const isPublicValuationInternalPage = pathname?.startsWith(
     "/valutazioni/holdingcasacorporation/"
   );
+  const isPublicValuationRootTokenPage = pathname?.startsWith("/vpdf_");
 
   const isPublicValuationDomain =
     typeof window !== "undefined" &&
@@ -29,6 +30,7 @@ export default function AuthGate({ children }: AuthGateProps) {
   const isPublicPage =
     isPublicWhatsAppPage ||
     isPublicValuationInternalPage ||
+    isPublicValuationRootTokenPage ||
     isPublicValuationDomain;
 
   useEffect(() => {

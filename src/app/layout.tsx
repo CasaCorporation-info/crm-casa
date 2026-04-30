@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import AuthGate from "@/components/AuthGate";
 import { AuthProvider } from "@/components/AuthProvider";
 import "./globals.css";
@@ -19,11 +20,31 @@ export const metadata: Metadata = {
   description: "CRM Casa Corporation",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const headersList = await headers();
+  const host = headersList.get("host") || "";
+
+  const isPublicValuationDomain = host.startsWith(
+    "valutazioni.holdingcasacorporation.it"
+  );
+
+  if (isPublicValuationDomain) {
+    return (
+      <html lang="it">
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+          style={{ margin: 0, background: "#111", color: "#111" }}
+        >
+          {children}
+        </body>
+      </html>
+    );
+  }
+
   return (
     <html lang="it">
       <body

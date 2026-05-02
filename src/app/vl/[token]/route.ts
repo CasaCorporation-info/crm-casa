@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 type RouteContext = {
-  params: {
+  params: Promise<{
     token: string;
-  };
+  }>;
 };
 
 const FALLBACK_REDIRECT_URL = "https://holdingcasacorporation.it";
 
 export async function GET(request: NextRequest, context: RouteContext) {
-  const { token } = context.params;
+  const { token } = await context.params;
 
   if (!token) {
     return NextResponse.redirect(FALLBACK_REDIRECT_URL);

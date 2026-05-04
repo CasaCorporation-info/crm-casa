@@ -44,6 +44,7 @@ export default async function ValuationPdfPage({ params }: PageProps) {
   await supabaseAdmin.from("valuation_link_events").insert({
     organization_id: valuationLink.organization_id,
     valuation_link_id: valuationLink.id,
+    valuation_token: valuationLink.valuation_token,
     contact_id: valuationLink.contact_id,
     agent_id: valuationLink.agent_id,
     token: valuationLink.token,

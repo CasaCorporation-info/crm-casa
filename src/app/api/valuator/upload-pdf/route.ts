@@ -46,13 +46,18 @@ export async function POST(request: NextRequest) {
     const contactId = String(formData.get("contact_id") || "").trim();
     const agentIdRaw = String(formData.get("agent_id") || "").trim();
     const source = String(formData.get("source") || "valuator").trim();
+
     const reviewsUrl =
       String(formData.get("reviews_url") || FALLBACK_REVIEWS_URL).trim() ||
       FALLBACK_REVIEWS_URL;
+
     const websiteUrl =
       String(formData.get("website_url") || FALLBACK_SITE_URL).trim() ||
       FALLBACK_SITE_URL;
-    const whatsappNumberRaw = String(formData.get("whatsapp_number") || "").trim();
+
+    const whatsappNumberRaw = String(
+      formData.get("whatsapp_number") || ""
+    ).trim();
 
     if (!organizationId) {
       return NextResponse.json(
@@ -77,6 +82,7 @@ export async function POST(request: NextRequest) {
       }
 
       const whatsappNumber = whatsappNumberRaw.replace(/[^\d]/g, "");
+
       if (!whatsappNumber) {
         return NextResponse.json(
           { error: "Numero WhatsApp non valido." },
@@ -117,12 +123,18 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      const valuationToken = buildToken("val");
       const valuationPdfToken = buildToken("vpdf");
       const reviewsToken = buildToken("rev");
       const whatsappToken = buildToken("wa");
       const incaricoToken = buildToken("inc");
+      const websiteToken = buildToken("site");
 
-      const whatsappDestinationUrl = `https://wa.me/${whatsappNumber}`;
+      const whatsappMessage = encodeURIComponent(
+        "Ho visto la valutazione del mio immobile, vorrei parlare con un agente"
+      );
+
+      const whatsappDestinationUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
 
       const rowsToInsert: Array<Record<string, string | boolean | null>> = [
         {
@@ -130,6 +142,7 @@ export async function POST(request: NextRequest) {
           contact_id: contactIdSafe,
           agent_id: agentId,
           token: valuationPdfToken,
+          valuation_token: valuationToken,
           link_type: "valuation_pdf",
           destination_url: "",
           source,
@@ -140,6 +153,7 @@ export async function POST(request: NextRequest) {
           contact_id: contactIdSafe,
           agent_id: agentId,
           token: reviewsToken,
+          valuation_token: valuationToken,
           link_type: "reviews",
           destination_url: reviewsUrl,
           source,
@@ -150,8 +164,20 @@ export async function POST(request: NextRequest) {
           contact_id: contactIdSafe,
           agent_id: agentId,
           token: whatsappToken,
+          valuation_token: valuationToken,
           link_type: "whatsapp",
           destination_url: whatsappDestinationUrl,
+          source,
+          is_active: true,
+        },
+        {
+          organization_id: organizationId,
+          contact_id: contactIdSafe,
+          agent_id: agentId,
+          token: websiteToken,
+          valuation_token: valuationToken,
+          link_type: "website",
+          destination_url: websiteUrl,
           source,
           is_active: true,
         },
@@ -163,6 +189,7 @@ export async function POST(request: NextRequest) {
           contact_id: contactIdSafe,
           agent_id: agentId,
           token: incaricoToken,
+          valuation_token: valuationToken,
           link_type: "incarico",
           destination_url: incaricoDestinationUrl,
           source,
@@ -173,11 +200,13 @@ export async function POST(request: NextRequest) {
       const { data: insertedRows, error: insertError } = await supabaseAdmin
         .from("valuation_links")
         .insert(rowsToInsert)
-        .select("id, token, link_type, destination_url");
+        .select("id, token, valuation_token, link_type, destination_url");
 
       if (insertError) {
         return NextResponse.json(
-          { error: `Errore inserimento valuation_links: ${insertError.message}` },
+          {
+            error: `Errore inserimento valuation_links: ${insertError.message}`,
+          },
           { status: 500 }
         );
       }
@@ -186,17 +215,24 @@ export async function POST(request: NextRequest) {
         (row) => row.link_type === "valuation_pdf"
       );
       const reviewsRow = insertedRows?.find((row) => row.link_type === "reviews");
-      const whatsappRow = insertedRows?.find((row) => row.link_type === "whatsapp");
-      const incaricoRow = insertedRows?.find((row) => row.link_type === "incarico");
+      const whatsappRow = insertedRows?.find(
+        (row) => row.link_type === "whatsapp"
+      );
+      const incaricoRow = insertedRows?.find(
+        (row) => row.link_type === "incarico"
+      );
+      const websiteRow = insertedRows?.find((row) => row.link_type === "website");
 
       const valuationPdfResolvedToken =
         valuationPdfRow?.token ?? valuationPdfToken;
       const reviewsResolvedToken = reviewsRow?.token ?? reviewsToken;
       const whatsappResolvedToken = whatsappRow?.token ?? whatsappToken;
+      const websiteResolvedToken = websiteRow?.token ?? websiteToken;
 
       return NextResponse.json({
         success: true,
         mode: "prepare",
+        valuation_token: valuationToken,
         valuation_pdf: {
           token: valuationPdfResolvedToken,
           tracked_url: buildPublicValuationUrl(
@@ -212,11 +248,15 @@ export async function POST(request: NextRequest) {
           token: whatsappResolvedToken,
           tracked_url: buildTrackedLinkUrl(baseUrl, whatsappResolvedToken),
         },
+        website: {
+          token: websiteResolvedToken,
+          tracked_url: buildTrackedLinkUrl(baseUrl, websiteResolvedToken),
+        },
         incarico: incaricoRow
           ? {
-            token: incaricoRow.token,
-            tracked_url: buildTrackedLinkUrl(baseUrl, incaricoRow.token),
-          }
+              token: incaricoRow.token,
+              tracked_url: buildTrackedLinkUrl(baseUrl, incaricoRow.token),
+            }
           : null,
       });
     }

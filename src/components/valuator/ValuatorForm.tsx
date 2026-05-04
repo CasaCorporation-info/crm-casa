@@ -53,6 +53,10 @@ type PreparedUploadResponse = {
     token: string;
     tracked_url: string;
   };
+  website: {
+    token: string;
+    tracked_url: string;
+  };
   incarico: {
     token: string;
     tracked_url: string;
@@ -715,13 +719,11 @@ export default function ValuatorForm() {
       throw new Error("Profilo utente non trovato.");
     }
 
-    if (!profile.whatsapp_number) {
-      throw new Error("Numero WhatsApp utente non configurato nel profilo.");
-    }
+    const fallbackWhatsappNumber = "3891641958";
 
     return {
       userId: user.id,
-      whatsappNumber: String(profile.whatsapp_number),
+      whatsappNumber: String(profile.whatsapp_number || fallbackWhatsappNumber),
     };
   }
 
@@ -821,7 +823,7 @@ export default function ValuatorForm() {
         incaricoPdfUrl:
           prepareData.incarico?.tracked_url ||
           "https://holdingcasacorporation.it",
-        websiteUrl: runtimeWebsiteUrl,
+        websiteUrl: prepareData.website?.tracked_url || runtimeWebsiteUrl,
       };
 
       const pdf = await buildPdfDocument(preview, links);

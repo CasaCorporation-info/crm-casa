@@ -1,16 +1,17 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     token: string;
-  };
+  }>;
 };
 
 const FALLBACK_REDIRECT_URL = "https://holdingcasacorporation.it";
 
 export default async function ValuationPdfPage({ params }: PageProps) {
-  const { token } = params;
+  const { token } = await params;
 
   if (!token) {
     redirect(FALLBACK_REDIRECT_URL);
@@ -22,7 +23,7 @@ export default async function ValuationPdfPage({ params }: PageProps) {
     .eq("token", token)
     .eq("link_type", "valuation_pdf")
     .eq("is_active", true)
-    .single();
+    .maybeSingle();
 
   if (linkError || !valuationLink) {
     redirect(FALLBACK_REDIRECT_URL);
@@ -37,6 +38,9 @@ export default async function ValuationPdfPage({ params }: PageProps) {
     redirect(FALLBACK_REDIRECT_URL);
   }
 
+  const headersList = await headers();
+  const userAgent = headersList.get("user-agent");
+
   await supabaseAdmin.from("valuation_link_events").insert({
     organization_id: valuationLink.organization_id,
     valuation_link_id: valuationLink.id,
@@ -47,16 +51,8 @@ export default async function ValuationPdfPage({ params }: PageProps) {
     destination_url: destinationUrl,
     source: valuationLink.source,
     event_type: "opened",
-    user_agent: null,
+    user_agent: userAgent,
   });
 
-  return (
-    <main className="min-h-screen bg-neutral-950">
-      <iframe
-        src={destinationUrl}
-        title="Valutazione PDF"
-        className="h-screen w-full border-0"
-      />
-    </main>
-  );
+  redirect(destinationUrl);
 }

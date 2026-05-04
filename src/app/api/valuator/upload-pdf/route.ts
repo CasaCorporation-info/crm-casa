@@ -30,7 +30,7 @@ function buildStoragePath({
 }
 
 function buildPublicValuationUrl(baseUrl: string, token: string) {
-  return `${baseUrl}/${token}`;
+  return `${baseUrl}/v/${token}`;
 }
 
 function buildTrackedLinkUrl(baseUrl: string, token: string) {
@@ -61,7 +61,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl = "https://valutazioni.holdingcasacorporation.it"; const contactIdSafe = contactId || null;
+    const baseUrl =
+      process.env.NEXT_PUBLIC_VALUATION_BASE_URL ||
+      "https://valutazioni.holdingcasacorporation.it";
+
+    const contactIdSafe = contactId || null;
     const agentId = agentIdRaw || null;
 
     if (mode === "prepare") {

@@ -17,21 +17,13 @@ export default function AuthGate({ children }: AuthGateProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const isLoginPage = pathname === "/login";
-  const isPublicWhatsAppPage = pathname?.startsWith("/w/");
-  const isPublicValuationInternalPage = pathname?.startsWith(
-    "/valutazioni/holdingcasacorporation/"
-  );
-  const isPublicValuationRootTokenPage = pathname?.startsWith("/vpdf_");
-
-  const isPublicValuationDomain =
-    typeof window !== "undefined" &&
-    window.location.hostname === "valutazioni.holdingcasacorporation.it";
 
   const isPublicPage =
-    isPublicWhatsAppPage ||
-    isPublicValuationInternalPage ||
-    isPublicValuationRootTokenPage ||
-    isPublicValuationDomain;
+    pathname?.startsWith("/v/") ||
+    pathname?.startsWith("/vl/") ||
+    pathname?.startsWith("/w/") ||
+    pathname?.startsWith("/vpdf_") ||
+    pathname?.startsWith("/valutazioni/holdingcasacorporation/");
 
   useEffect(() => {
     let mounted = true;

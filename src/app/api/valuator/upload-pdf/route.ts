@@ -109,9 +109,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (assetRow?.file_path) {
-        const cleanPath = String(assetRow.file_path)
-          .replace(`${VALUATION_INCARICHI_BUCKET}/`, "")
-          .trim();
+        const cleanPath = String(assetRow.file_path).trim();
 
         const { data: signedIncaricoData, error: signedIncaricoError } =
           await supabaseAdmin.storage
@@ -254,9 +252,9 @@ export async function POST(request: NextRequest) {
         },
         incarico: incaricoRow
           ? {
-              token: incaricoRow.token,
-              tracked_url: buildTrackedLinkUrl(baseUrl, incaricoRow.token),
-            }
+            token: incaricoRow.token,
+            tracked_url: buildTrackedLinkUrl(baseUrl, incaricoRow.token),
+          }
           : null,
       });
     }

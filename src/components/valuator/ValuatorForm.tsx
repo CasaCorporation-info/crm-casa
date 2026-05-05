@@ -690,7 +690,9 @@ export default function ValuatorForm() {
     pdf.text("www.holdingcasacorporation.it", 105, 282, {
       align: "center",
     });
-    pdf.link(62, 277, 86, 8, { url: links.websiteUrl });
+    pdf.link(62, 277, 86, 8, {
+      url: "https://www.holdingcasacorporation.it",
+    });
 
     pdf.setTextColor(gold[0], gold[1], gold[2]);
     pdf.setFontSize(10);

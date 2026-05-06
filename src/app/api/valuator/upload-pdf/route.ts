@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
     const contactId = String(formData.get("contact_id") || "").trim();
     const agentIdRaw = String(formData.get("agent_id") || "").trim();
     const source = String(formData.get("source") || "valuator").trim();
+    const valuationName = String(formData.get("valuation_name") || "").trim();
 
     const reviewsUrl =
       String(formData.get("reviews_url") || FALLBACK_REVIEWS_URL).trim() ||
@@ -139,6 +140,7 @@ export async function POST(request: NextRequest) {
           organization_id: organizationId,
           contact_id: contactIdSafe,
           agent_id: agentId,
+          valuation_name: valuationName || null,
           token: valuationPdfToken,
           valuation_token: valuationToken,
           link_type: "valuation_pdf",
@@ -150,6 +152,7 @@ export async function POST(request: NextRequest) {
           organization_id: organizationId,
           contact_id: contactIdSafe,
           agent_id: agentId,
+          valuation_name: valuationName || null,
           token: reviewsToken,
           valuation_token: valuationToken,
           link_type: "reviews",
@@ -161,6 +164,7 @@ export async function POST(request: NextRequest) {
           organization_id: organizationId,
           contact_id: contactIdSafe,
           agent_id: agentId,
+          valuation_name: valuationName || null,
           token: whatsappToken,
           valuation_token: valuationToken,
           link_type: "whatsapp",
@@ -172,6 +176,7 @@ export async function POST(request: NextRequest) {
           organization_id: organizationId,
           contact_id: contactIdSafe,
           agent_id: agentId,
+          valuation_name: valuationName || null,
           token: websiteToken,
           valuation_token: valuationToken,
           link_type: "website",
@@ -186,6 +191,7 @@ export async function POST(request: NextRequest) {
           organization_id: organizationId,
           contact_id: contactIdSafe,
           agent_id: agentId,
+          valuation_name: valuationName || null,
           token: incaricoToken,
           valuation_token: valuationToken,
           link_type: "incarico",
@@ -252,9 +258,9 @@ export async function POST(request: NextRequest) {
         },
         incarico: incaricoRow
           ? {
-            token: incaricoRow.token,
-            tracked_url: buildTrackedLinkUrl(baseUrl, incaricoRow.token),
-          }
+              token: incaricoRow.token,
+              tracked_url: buildTrackedLinkUrl(baseUrl, incaricoRow.token),
+            }
           : null,
       });
     }
@@ -318,6 +324,7 @@ export async function POST(request: NextRequest) {
         .update({
           destination_url: pdfDestinationUrl,
           is_active: true,
+          valuation_name: valuationName || null,
         })
         .eq("token", valuationPdfToken)
         .eq("link_type", "valuation_pdf");

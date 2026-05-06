@@ -142,6 +142,14 @@ export default function AppShell({
                 </Link>
 
                 <Link
+                  href="/kpi/privati"
+                  className="crm-sidebar-link"
+                  onClick={closeSidebar}
+                >
+                  Privati Analytics
+                </Link>
+
+                <Link
                   href="/contact-alerts"
                   className="crm-sidebar-link"
                   onClick={closeSidebar}

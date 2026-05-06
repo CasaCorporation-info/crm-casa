@@ -217,8 +217,12 @@ function sanitizeFileNamePart(value: string) {
 
 function getPdfFileName(
   preview: ValuationPreviewData | null,
-  form: Record<string, any>
+  form: Record<string, any>,
+  valuationName?: string
 ) {
+  if (valuationName?.trim()) {
+    return `${sanitizeFileNamePart(valuationName)}.pdf`;
+  }
   const address =
     form.indirizzo_immobile || form.indirizzo || form.via || "valutazione";
   const suggested = preview?.pricing?.suggested
@@ -351,6 +355,7 @@ export default function ValuatorForm() {
   const [valuationMode, setValuationMode] =
     useState<ValuationMode>("technical");
   const [freePrompt, setFreePrompt] = useState("");
+  const [valuationName, setValuationName] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
   const [generatedPdfTrackedUrl, setGeneratedPdfTrackedUrl] = useState("");
   const [generatedPdfStoragePath, setGeneratedPdfStoragePath] = useState("");
@@ -769,6 +774,10 @@ export default function ValuatorForm() {
       setErrorMessage("Genera prima una valutazione.");
       return;
     }
+    if (!valuationName.trim()) {
+      setErrorMessage("Inserisci il nome della valutazione prima di creare il PDF.");
+      return;
+    }
 
     try {
       setPdfLoading(true);
@@ -796,6 +805,7 @@ export default function ValuatorForm() {
       prepareFormData.append("contact_id", contactId ?? "");
       prepareFormData.append("agent_id", userId);
       prepareFormData.append("source", "valuator");
+      prepareFormData.append("valuation_name", valuationName.trim());
       prepareFormData.append(
         "reviews_url",
         "https://recensioni.holdingcasacorporation.it/"
@@ -830,7 +840,11 @@ export default function ValuatorForm() {
 
       const pdf = await buildPdfDocument(preview, links);
       const pdfBlob = pdf.output("blob");
-      const pdfFileName = getPdfFileName(preview, form);
+      const pdfFileName = getPdfFileName(
+        preview,
+        form,
+        valuationName
+      );
       const pdfFile = new File([pdfBlob], pdfFileName, {
         type: "application/pdf",
       });
@@ -840,6 +854,7 @@ export default function ValuatorForm() {
       finalizeFormData.append("organization_id", ORGANIZATION_ID);
       finalizeFormData.append("contact_id", contactId ?? "");
       finalizeFormData.append("agent_id", userId);
+      finalizeFormData.append("valuation_name", valuationName.trim());
       finalizeFormData.append(
         "valuation_pdf_token",
         prepareData.valuation_pdf.token
@@ -1250,6 +1265,39 @@ export default function ValuatorForm() {
               preview finale.
             </div>
           </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: "14px",
+          background: "#fff",
+          padding: "16px",
+          display: "grid",
+          gap: "8px",
+        }}
+      >
+        <label style={{ fontWeight: 800 }}>
+          Nome valutazione *
+        </label>
+
+        <input
+          type="text"
+          value={valuationName}
+          onChange={(e) => setValuationName(e.target.value)}
+          placeholder="Es. Via Amatore Sciesa 86 - Marino"
+          required
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: "10px",
+            border: "1px solid #d0d5dd",
+          }}
+        />
+
+        <div style={{ fontSize: "13px", color: "#6b7280" }}>
+          Questo nome sarà usato per il PDF e per riconoscere la valutazione nelle KPI.
         </div>
       </div>
 

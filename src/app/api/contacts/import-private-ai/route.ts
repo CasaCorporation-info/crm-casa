@@ -445,9 +445,12 @@ export async function POST(req: Request) {
     const extractedTitle = normalizeText(parsed.title);
     const extractedDescription = normalizeText(parsed.description);
     const extractedCity = normalizeText(parsed.city);
-    const suggestedFirstMessage = normalizeText(
-      parsed.suggested_first_message
-    );
+    const suggestedFirstMessage = `Gentile cliente,
+le invio una valutazione e presentazione digitale personalizzata generata dalla nostra IA.
+
+Laddove avesse interesse, può contattarmi ai recapiti indicati internamente.
+
+Un cordiale saluto`;
 
     const portalSource =
       normalizeText(parsed.portal_source) ||

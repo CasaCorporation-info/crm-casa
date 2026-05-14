@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import jsPDF from "jspdf";
 import { supabase } from "@/lib/supabaseClient";
 import ValuationPreview, {
@@ -339,6 +340,8 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 export default function ValuatorForm() {
+  const searchParams = useSearchParams();
+  const valuationId = searchParams.get("valuation_id");
   const [fields, setFields] = useState<Field[]>([]);
   const [form, setForm] = useState<Record<string, any>>({});
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -359,6 +362,8 @@ export default function ValuatorForm() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [generatedPdfTrackedUrl, setGeneratedPdfTrackedUrl] = useState("");
   const [generatedPdfStoragePath, setGeneratedPdfStoragePath] = useState("");
+  const [linkedContactId, setLinkedContactId] = useState<string | null>(null);
+  const [loadedValuationId, setLoadedValuationId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadFields() {
@@ -381,6 +386,50 @@ export default function ValuatorForm() {
 
     loadFields();
   }, []);
+
+  useEffect(() => {
+    async function loadSavedValuation() {
+      if (!valuationId) return;
+
+      setLoading(true);
+      setErrorMessage("");
+
+      const { data, error } = await supabase
+        .from("property_valuations")
+        .select("id, contact_id, property_address, property_data")
+        .eq("id", valuationId)
+        .single();
+
+      if (error || !data) {
+        setErrorMessage("Valutazione salvata non trovata.");
+        setLoading(false);
+        return;
+      }
+
+      const propertyData = data.property_data as any;
+      const savedPreview = propertyData?.preview;
+
+      if (!savedPreview) {
+        setErrorMessage("Preview valutazione non trovata nei dati salvati.");
+        setLoading(false);
+        return;
+      }
+
+      setPreview(savedPreview as ValuationPreviewData);
+      setLinkedContactId(data.contact_id || null);
+      setLoadedValuationId(data.id || null);
+      setValuationMode("free_text");
+      setValuationName(
+        data.property_address ||
+        propertyData?.extracted_title ||
+        "Valutazione IA da annuncio"
+      );
+
+      setLoading(false);
+    }
+
+    loadSavedValuation();
+  }, [valuationId]);
 
   function toggleSection(sectionKey: string) {
     setOpenSections((prev) => ({
@@ -791,12 +840,14 @@ export default function ValuatorForm() {
           : DEFAULT_WEBSITE_URL;
 
       const { userId, whatsappNumber } = await findCurrentUserAndWhatsapp();
-      let contactId: string | null = null;
+      let contactId: string | null = linkedContactId;
 
-      try {
-        contactId = await findContactIdForPdf();
-      } catch {
-        contactId = null;
+      if (!contactId) {
+        try {
+          contactId = await findContactIdForPdf();
+        } catch {
+          contactId = null;
+        }
       }
 
       const prepareFormData = new FormData();
@@ -881,6 +932,22 @@ export default function ValuatorForm() {
       downloadBlob(pdfBlob, pdfFileName);
       setGeneratedPdfTrackedUrl(finalizeData.tracked_url);
       setGeneratedPdfStoragePath(finalizeData.storage_path);
+      if (loadedValuationId) {
+        await supabase
+          .from("property_valuations")
+          .update({
+            status: "pdf_created",
+            property_data: {
+              ...(form || {}),
+              preview,
+              pdf: {
+                tracked_url: finalizeData.tracked_url,
+                storage_path: finalizeData.storage_path,
+              },
+            },
+          })
+          .eq("id", loadedValuationId);
+      }
     } catch (error) {
       setErrorMessage(
         error instanceof Error

@@ -95,6 +95,7 @@ export default function ContactDetailPage() {
   const [aiImport, setAiImport] = useState<ContactAiImport | null>(null);
   const [aiImageUrl, setAiImageUrl] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [generatingValuation, setGeneratingValuation] = useState(false);
 
   const normalizedRole = String(auth.role || "").trim().toLowerCase();
   const isAdminLike =
@@ -499,6 +500,59 @@ export default function ContactDetailPage() {
       await navigator.clipboard.writeText(message);
     } catch {
       setErrorMsg("Impossibile copiare il messaggio negli appunti.");
+    }
+  }
+
+  async function handleGenerateAiValuation() {
+    if (!c?.id) return;
+
+    if (!auth.userId) {
+      setErrorMsg("Utente non autenticato.");
+      return;
+    }
+
+    if (!aiImport) {
+      setErrorMsg("Nessun Box IA annuncio collegato al contatto.");
+      return;
+    }
+
+    setGeneratingValuation(true);
+    setErrorMsg(null);
+
+    try {
+      const response = await fetch("/api/contacts/generate-ai-valuation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contact_id: c.id,
+          user_id: auth.userId,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || "Errore generazione valutazione IA.");
+      }
+
+      if (result.valuation_id) {
+        router.push(`/valuator?valuation_id=${result.valuation_id}`);
+        return;
+      }
+
+      await loadContact();
+
+      alert("Valutazione IA generata correttamente, ma non ho ricevuto l'ID della valutazione.");
+    } catch (error) {
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Errore durante la generazione della valutazione IA."
+      );
+    } finally {
+      setGeneratingValuation(false);
     }
   }
 
@@ -916,6 +970,27 @@ export default function ContactDetailPage() {
           >
             Apri annuncio
           </a>
+
+          <button
+            type="button"
+            onClick={handleGenerateAiValuation}
+            disabled={!aiImport || generatingValuation}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #111",
+              background: "#111",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: !aiImport || generatingValuation ? "not-allowed" : "pointer",
+              opacity: !aiImport || generatingValuation ? 0.6 : 1,
+            }}
+          >
+            {generatingValuation
+              ? "Genero valutazione..."
+              : "Genera valutazione IA"}
+          </button>
+
         </div>
 
         {aiLoading ? (

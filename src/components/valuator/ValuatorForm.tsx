@@ -35,6 +35,7 @@ type ValuationMode = "technical" | "free_text";
 type PdfLinks = {
   reviewsUrl: string;
   whatsappAgentUrl: string;
+  whatsappPromoUrl: string;
   incaricoPdfUrl: string;
   websiteUrl: string;
 };
@@ -84,10 +85,7 @@ const COMPANY_INFO = {
 };
 
 const PDF_LOGO_URL = "/logo-casa-corporation.png";
-const DEFAULT_WEBSITE_URL =
-  typeof window !== "undefined"
-    ? window.location.origin
-    : process.env.NEXT_PUBLIC_APP_URL || "https://crm-casa.vercel.app";
+const DEFAULT_WEBSITE_URL = "https://www.holdingcasacorporation.it";
 
 function getSectionTitle(section: string) {
   switch (section) {
@@ -517,8 +515,6 @@ export default function ValuatorForm() {
     const pdf = new jsPDF("p", "mm", "a4");
     const logoDataUrl = await loadImageAsDataUrl(PDF_LOGO_URL);
 
-    const pageWidth = pdf.internal.pageSize.getWidth();
-
     const gold: [number, number, number] = [205, 169, 106];
     const textLight: [number, number, number] = [245, 237, 221];
     const softText: [number, number, number] = [218, 207, 190];
@@ -526,46 +522,81 @@ export default function ValuatorForm() {
 
     drawLuxuryBackground(pdf);
 
-    pdf.addImage(logoDataUrl, "PNG", 30, 12, 32, 22);
+    pdf.addImage(logoDataUrl, "PNG", 38, 14, 25, 17);
 
     pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
     pdf.setFont("times", "bold");
-    pdf.setFontSize(22);
-    pdf.text("Casa Corporation", 105, 20, { align: "center" });
+    pdf.setFontSize(20);
+    pdf.text("Casa Corporation", 105, 22, { align: "center" });
 
     pdf.setTextColor(gold[0], gold[1], gold[2]);
     pdf.setFont("times", "normal");
-    pdf.setFontSize(11);
-    pdf.text("Valutazioni immobiliari professionali", 105, 27, {
+    pdf.setFontSize(9.5);
+    pdf.text("Valutazioni immobiliari professionali", 105, 28, {
       align: "center",
     });
 
     pdf.setTextColor(softText[0], softText[1], softText[2]);
-    pdf.setFontSize(10.5);
+    pdf.setFontSize(9);
     pdf.text("Via Davide Campari 205/207, Roma", 105, 34, {
       align: "center",
     });
 
-    drawSectionTitle(pdf, "Valutazione Immobiliare", 52);
+    drawSectionTitle(pdf, "Valutazione Immobiliare", 48);
 
-    drawRoundedPanel(pdf, 22, 60, 166, 38, panel);
+    // PREZZO CONSIGLIATO
+    drawRoundedPanel(pdf, 28, 56, 154, 35, panel);
+
     pdf.setTextColor(gold[0], gold[1], gold[2]);
     pdf.setFont("times", "normal");
-    pdf.setFontSize(14);
-    pdf.text("Prezzo di Vendita Consigliato", 105, 73, { align: "center" });
-
-    pdf.setFont("times", "bold");
-    pdf.setFontSize(30);
-    pdf.text(formatCurrencyPlain(previewData.pricing.suggested), 105, 86, {
+    pdf.setFontSize(13);
+    pdf.text("Prezzo di Vendita Consigliato", 105, 68, {
       align: "center",
     });
 
-    const priceBoxY = 105;
-    const priceBoxW = 50;
+    pdf.setFont("times", "bold");
+    pdf.setFontSize(28);
+    pdf.text(formatCurrencyPlain(previewData.pricing.suggested), 105, 82, {
+      align: "center",
+    });
+
+    // CTA PROMO
+    drawRoundedPanel(pdf, 28, 96, 154, 36, [17, 31, 69]);
+
+    pdf.setTextColor(gold[0], gold[1], gold[2]);
+    pdf.setFont("times", "bold");
+    pdf.setFontSize(16);
+    pdf.text("VUOI VENDERE A QUESTO PREZZO?", 105, 106, {
+      align: "center",
+    });
+
+    pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
+    pdf.setFont("times", "normal");
+    pdf.setFontSize(10.5);
+    pdf.text("Approfitta della PROMO 0% lato venditore", 105, 114, {
+      align: "center",
+    });
+
+    pdf.setFillColor(37, 99, 235);
+    pdf.roundedRect(58, 119, 94, 10, 3, 3, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("times", "bold");
+    pdf.setFontSize(11);
+    pdf.text("SCRIVICI SU WHATSAPP", 105, 125.5, {
+      align: "center",
+    });
+
+    pdf.link(58, 119, 94, 10, {
+      url: links.whatsappPromoUrl,
+    });
+
+    // BOX PREZZI
+    const priceBoxY = 139;
+    const priceBoxW = 48;
     const priceBoxH = 22;
-    const priceGap = 5;
-    const totalWidth = priceBoxW * 3 + priceGap * 2;
-    const startX = (pageWidth - totalWidth) / 2;
+    const priceGap = 6;
+    const startX = 27;
 
     const priceItems = [
       { label: "Prezzo minimo", value: previewData.pricing.min },
@@ -575,182 +606,162 @@ export default function ValuatorForm() {
 
     priceItems.forEach((item, index) => {
       const x = startX + index * (priceBoxW + priceGap);
+
       drawRoundedPanel(pdf, x, priceBoxY, priceBoxW, priceBoxH, [18, 30, 66]);
 
       pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
       pdf.setFont("times", "normal");
-      pdf.setFontSize(11);
-      pdf.text(item.label, x + priceBoxW / 2, priceBoxY + 7, {
+      pdf.setFontSize(10.5);
+      pdf.text(item.label, x + priceBoxW / 2, priceBoxY + 8, {
         align: "center",
       });
 
       pdf.setTextColor(gold[0], gold[1], gold[2]);
       pdf.setFont("times", "bold");
-      pdf.setFontSize(16);
-      pdf.text(
-        formatCurrencyPlain(item.value),
-        x + priceBoxW / 2,
-        priceBoxY + 16,
-        {
-          align: "center",
-        }
-      );
+      pdf.setFontSize(15);
+      pdf.text(formatCurrencyPlain(item.value), x + priceBoxW / 2, priceBoxY + 17, {
+        align: "center",
+      });
     });
 
-    drawRoundedPanel(pdf, 22, 135, 166, 42, panel);
+    // ANALISI IA
+    drawRoundedPanel(pdf, 28, 166, 154, 40, panel);
+
     pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
     pdf.setFont("times", "bold");
-    pdf.setFontSize(17);
-    pdf.text("Analisi IA Casa Corporation", 105, 146, { align: "center" });
+    pdf.setFontSize(16);
+    pdf.text("Analisi IA Casa Corporation", 105, 177, {
+      align: "center",
+    });
 
     pdf.setDrawColor(gold[0], gold[1], gold[2]);
     pdf.setLineWidth(0.3);
-    pdf.line(35, 150, 175, 150);
+    pdf.line(45, 181, 165, 181);
 
     pdf.setTextColor(softText[0], softText[1], softText[2]);
     pdf.setFont("times", "normal");
-    pdf.setFontSize(10.2);
-    addWrappedText(pdf, previewData.ai.comment || "-", 32, 158, 146, 4.8);
+    pdf.setFontSize(9.2);
 
-    drawRoundedPanel(pdf, 22, 186, 166, 55, panel);
+    const commentLines = pdf.splitTextToSize(
+      previewData.ai.comment || "-",
+      134
+    );
+
+    pdf.text(commentLines.slice(0, 5), 38, 188);
+    // MINI VANTAGGI
+    drawRoundedPanel(pdf, 28, 211, 154, 27, [17, 31, 69]);
+
     pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
     pdf.setFont("times", "bold");
-    pdf.setFontSize(17);
-    pdf.text("Vantaggi di vendere con Casa Corporation", 105, 198, {
+    pdf.setFontSize(11.5);
+    pdf.text("Vantaggi di vendere con Casa Corporation", 105, 219, {
       align: "center",
     });
 
-    pdf.setFont("times", "normal");
-    pdf.setFontSize(13.5);
     pdf.setTextColor(softText[0], softText[1], softText[2]);
+    pdf.setFont("times", "normal");
+    pdf.setFontSize(6.8);
+    pdf.setFontSize(7.2);
 
-    const bulletX = 35;
-    let bulletY = 211;
-
-    pdf.text("✓", bulletX, bulletY);
-    pdf.text("Rinuncia al rimborso spese", bulletX + 8, bulletY);
-
-    bulletY += 11;
-    pdf.text("✓", bulletX, bulletY);
-    pdf.text("Affidabilità - Leggi le recensioni", bulletX + 8, bulletY);
-    pdf.link(86, bulletY - 5, 52, 6, { url: links.reviewsUrl });
-
-    bulletY += 11;
-    pdf.text("✓", bulletX, bulletY);
-    pdf.text("Risorse IA all'avanguardia", bulletX + 8, bulletY);
-
-    pdf.setTextColor(gold[0], gold[1], gold[2]);
-    pdf.setFontSize(10);
-    pdf.text("Pagina 1 di 2", 105, 286, { align: "center" });
-
-    pdf.addPage();
-    drawLuxuryBackground(pdf);
-
-    pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
-    pdf.setFont("times", "bold");
-    pdf.setFontSize(22);
-    pdf.text("La Tua Proprietà, la Nostra Missione", 105, 28, {
+    pdf.text("Rinuncia rimborso spese", 105, 224, {
       align: "center",
     });
 
-    pdf.setTextColor(gold[0], gold[1], gold[2]);
-    pdf.setFont("times", "normal");
-    pdf.setFontSize(12);
-    pdf.text("Ecco cosa possiamo offrirti:", 105, 39, { align: "center" });
+    pdf.text("Recensioni verificate", 105, 229, {
+      align: "center",
+    });
 
-    const cardY = 52;
-    const cardW = 54;
-    const cardH = 48;
-    const cardGap = 6;
-    const cardStartX = 18;
+    pdf.text("Risorse IA all'avanguardia", 105, 234, {
+      align: "center",
+    });
 
-    const cards = [
+    // CTA FINALI
+    const cardY = 242;
+    const cardW = 36;
+    const cardH = 32;
+    const cardGap = 4;
+    const cardStartX = 27;
+
+    const ctaCards = [
       {
-        title: "Valutazione\nProfessionale",
-        text: "Metodo strutturato, supporto IA e lettura professionale del mercato.",
+        title: "LEGGI LE\nRECENSIONI",
+        text: "Scopri cosa dicono\ndi noi i clienti",
+        button: "CLICCA QUI",
+        url: links.reviewsUrl,
       },
       {
-        title: "Esperienza\nVentennale",
-        text: "Trattative complesse, posizionamento corretto e gestione venditore.",
+        title: "VISUALIZZA\nINCARICO",
+        text: "Guarda il nostro\nmodello operativo",
+        button: "CLICCA QUI",
+        url: links.incaricoPdfUrl,
       },
       {
-        title: "Risultati\nGarantiti",
-        text: "Strategia commerciale concreta per vendere meglio e più velocemente.",
+        title: "CONTATTA\nL'AGENTE",
+        text: "Parla direttamente\ncon un consulente",
+        button: "SCRIVICI",
+        url: links.whatsappAgentUrl,
+      },
+      {
+        title: "VISITA IL\nNOSTRO SITO",
+        text: "Scopri tutti i servizi\ndi Casa Corporation",
+        button: "CLICCA QUI",
+        url: links.websiteUrl,
       },
     ];
 
-    cards.forEach((card, index) => {
+    ctaCards.forEach((card, index) => {
       const x = cardStartX + index * (cardW + cardGap);
+
       drawRoundedPanel(pdf, x, cardY, cardW, cardH, [16, 28, 64]);
 
       pdf.setTextColor(gold[0], gold[1], gold[2]);
       pdf.setFont("times", "bold");
-      pdf.setFontSize(16);
-      const titleLines = pdf.splitTextToSize(card.title, cardW - 10);
-      pdf.text(titleLines, x + cardW / 2, cardY + 14, { align: "center" });
+      pdf.setFontSize(8.8);
+      pdf.text(card.title.split("\n"), x + cardW / 2, cardY + 8, {
+        align: "center",
+      });
 
       pdf.setTextColor(softText[0], softText[1], softText[2]);
       pdf.setFont("times", "normal");
-      pdf.setFontSize(9.5);
-      const bodyLines = pdf.splitTextToSize(card.text, cardW - 10);
-      pdf.text(bodyLines, x + cardW / 2, cardY + 31, { align: "center" });
-    });
-
-    drawRoundedPanel(pdf, 25, 120, 160, 24, [17, 31, 69]);
-    pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
-    pdf.setFont("times", "bold");
-    pdf.setFontSize(16);
-    pdf.text("Contatta l'agente per info", 105, 131, { align: "center" });
-    pdf.setFont("times", "normal");
-    pdf.setFontSize(10);
-    pdf.setTextColor(softText[0], softText[1], softText[2]);
-    pdf.text("Risponderemo nel più breve tempo possibile", 105, 137, {
-      align: "center",
-    });
-    pdf.link(25, 120, 160, 24, { url: links.whatsappAgentUrl });
-
-    drawRoundedPanel(pdf, 25, 152, 160, 24, [17, 31, 69]);
-    pdf.setTextColor(textLight[0], textLight[1], textLight[2]);
-    pdf.setFont("times", "bold");
-    pdf.setFontSize(16);
-    pdf.text("Visualizza Modulario d'Incarico", 105, 163, {
-      align: "center",
-    });
-    pdf.setFont("times", "normal");
-    pdf.setFontSize(10);
-    pdf.setTextColor(softText[0], softText[1], softText[2]);
-    pdf.text(
-      "Scopri come possiamo vendere al meglio il tuo immobile",
-      105,
-      169,
-      {
+      pdf.setFontSize(6.8);
+      pdf.text(card.text.split("\n"), x + cardW / 2, cardY + 19, {
         align: "center",
-      }
-    );
-    pdf.link(25, 152, 160, 24, { url: links.incaricoPdfUrl });
+      });
 
-    pdf.addImage(logoDataUrl, "PNG", 91, 243, 28, 18);
+      pdf.setFillColor(gold[0], gold[1], gold[2]);
+      pdf.roundedRect(x + 7, cardY + 25, cardW - 14, 5.5, 2, 2, "F");
 
-    pdf.setDrawColor(189, 155, 96);
+      pdf.setTextColor(9, 20, 52);
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(7);
+      pdf.text(card.button, x + cardW / 2, cardY + 28.8, {
+        align: "center",
+      });
+
+      pdf.link(x, cardY, cardW, cardH, {
+        url: card.url,
+      });
+    });
+
+    // FOOTER
+    pdf.setDrawColor(gold[0], gold[1], gold[2]);
     pdf.setLineWidth(0.4);
-    pdf.line(20, 268, 190, 268);
+    pdf.line(35, 281, 175, 281);
 
     pdf.setTextColor(softText[0], softText[1], softText[2]);
     pdf.setFont("times", "normal");
-    pdf.setFontSize(10.5);
-    pdf.text("Via Davide Campari 205/207, Roma", 105, 276, {
+    pdf.setFontSize(8.5);
+    pdf.text("Via Davide Campari 205/207, Roma", 105, 285, {
       align: "center",
     });
-    pdf.text("www.holdingcasacorporation.it", 105, 282, {
+
+    pdf.text("www.holdingcasacorporation.it", 105, 289, {
       align: "center",
     });
-    pdf.link(62, 277, 86, 8, {
+
+    pdf.link(70, 284, 70, 6, {
       url: "https://www.holdingcasacorporation.it",
     });
-
-    pdf.setTextColor(gold[0], gold[1], gold[2]);
-    pdf.setFontSize(10);
-    pdf.text("Pagina 2 di 2", 105, 288, { align: "center" });
 
     return pdf;
   }
@@ -834,10 +845,7 @@ export default function ValuatorForm() {
       setGeneratedPdfTrackedUrl("");
       setGeneratedPdfStoragePath("");
 
-      const runtimeWebsiteUrl =
-        typeof window !== "undefined"
-          ? window.location.origin
-          : DEFAULT_WEBSITE_URL;
+      const runtimeWebsiteUrl = DEFAULT_WEBSITE_URL;
 
       const { userId, whatsappNumber } = await findCurrentUserAndWhatsapp();
       let contactId: string | null = linkedContactId;
@@ -880,9 +888,18 @@ export default function ValuatorForm() {
         );
       }
 
+      const whatsappPromoMessage = encodeURIComponent(
+        "Sono interessato alla PROMO 0% lato venditore"
+      );
+
+      const rawWhatsappNumber = whatsappNumber.replace(/[^\d]/g, "");
+
+      const promoWhatsappUrl = `https://wa.me/${rawWhatsappNumber}?text=${whatsappPromoMessage}`;
+
       const links: PdfLinks = {
         reviewsUrl: prepareData.reviews.tracked_url,
         whatsappAgentUrl: prepareData.whatsapp.tracked_url,
+        whatsappPromoUrl: promoWhatsappUrl,
         incaricoPdfUrl:
           prepareData.incarico?.tracked_url ||
           "https://holdingcasacorporation.it",
